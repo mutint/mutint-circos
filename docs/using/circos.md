@@ -10,18 +10,23 @@ its type:
 
 | Type | Colour |
 |---|---|
-| SNP | light blue |
-| SUB | dark blue |
+| SNP | black |
+| DEL | red |
 | INS | green |
-| DEL | pink |
-| MOB | yellow, on a grey underlay |
-| AMP | orange |
-| INV | vermilion |
-| CON | black |
+| MOB | blue |
+| INV | orange |
+| SUB | purple |
+| AMP | teal |
+| CON | brown |
 | INT | grey |
 
-A deletion, amplification, inversion or conversion longer than 5 kb is drawn as an arc over
-its extent rather than as a point. Hover any mark for what the mutation is, where it is,
+A deletion, amplification, inversion or conversion longer than 5 kb is drawn as a thick arc
+over its extent rather than as a dash. On the outermost ring every mutation also wears a
+symbol for its kind -- the same shapes the Recurrent page draws: a circle for a synonymous
+base substitution, a square for a nonsynonymous one, a tombstone for nonsense, a diamond for
+intergenic, triangles for small indels, a bowtie for a mobile element, trapezoids for large
+deletions and insertions, a barbell for an inversion. The legend under the controls names
+them all. Hover any mark for what the mutation is, where it is,
 which gene it touches and which of the drawn samples carry it. Two mutations of one type
 closer together than the plot can separate become one mark that says how many it stands for.
 
@@ -31,7 +36,10 @@ closer together than the plot can separate become one mark that says how many it
 
 **Population** takes one population (and a treatment, where the experiment records
 any) and draws one ring per time point, innermost earliest, so a lineage's mutations can be
-followed outward through time. Samples at the same time point share a ring. Samples with no
+followed outward through time. Rings are shaded light to dark from earliest to latest. A
+mutation on an inner ring that no sample on the outermost ring carries is capped with its
+symbol: it was there, and is not in the latest clones. Samples at the same time point share a
+ring. Samples with no
 time point are drawn on an outermost ring labelled *untimed*; the line under the controls
 says how many rings there are and where everything went.
 

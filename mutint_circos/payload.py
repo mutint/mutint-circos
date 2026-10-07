@@ -12,6 +12,7 @@ mutations named, never the JSON fields.
 
 import collections
 
+from mutint_common.glyphs import GLYPHS, glyph_for, size_change
 from mutint_experiment.coordinates import format_time_point
 from mutint_import.reference_topology import entry_circular
 from mutint_sample.models import Mutation, ReferenceSequences
@@ -26,18 +27,19 @@ ARC_THRESHOLD = 5000
 #: The types whose length means an extent on the reference.
 SPAN_TYPES = frozenset(("DEL", "AMP", "INV", "CON"))
 
-#: Okabe-Ito, as the design this follows coloured its tracks, with the three types it did not
-#: draw given the palette's remaining colours. MOB is drawn over a grey underlay because the
-#: yellow is faint on white.
+#: The colours of the figure this follows (Barrick et al. 2009, Fig. 1): base substitutions
+#: black, deletions red, insertions green, mobile elements blue, inversions orange. The four
+#: types the figure has no colour for take distinct ones in the same family. INT's grey is
+#: near the darker rings', and its glyph is what tells it apart; it is rare.
 COLORS = collections.OrderedDict((
-    ("SNP", "#56B4E9"),
-    ("SUB", "#0072B2"),
-    ("INS", "#009E73"),
-    ("DEL", "#CC79A7"),
-    ("MOB", "#F0E442"),
-    ("AMP", "#E69F00"),
-    ("INV", "#D55E00"),
-    ("CON", "#000000"),
+    ("SNP", "#000000"),
+    ("DEL", "#e03030"),
+    ("INS", "#2e8b3c"),
+    ("MOB", "#3b5bb5"),
+    ("INV", "#f0a030"),
+    ("SUB", "#8e5bb5"),
+    ("AMP", "#1aa39a"),
+    ("CON", "#8c5a2b"),
     ("INT", "#999999"),
 ))
 
@@ -109,16 +111,28 @@ def present_calls(sample_ids, experiment_id):
     return calls
 
 
+def _sub_size_changes(sub_ids):
+    """`{id: size_change}` for the SUB rows named: the one glyph that needs the stored record,
+    read for those rows alone so the JSON column is never pulled across an experiment."""
+    if not sub_ids:
+        return {}
+    rows = (Mutation.objects.filter(id__in=list(sub_ids))
+            .values_list("id", "supplemental_data").iterator(chunk_size=2000))
+    return {pk: size_change(((data or {}).get(Mutation.COMPONENT) or {}).get(Mutation.GENOME_DIFF) or {})
+            for pk, data in rows}
+
+
 def mutation_entries(mutation_ids):
-    rows = (Mutation.objects.filter(id__in=list(mutation_ids))
-            .order_by("seq_id", "start_position", "id")
-            .values_list("id", "mutation_type", "seq_id", "start_position", "end_position",
-                         "feature_length", "gene", "product", "sequence_change",
-                         "mutation_category")
-            .iterator(chunk_size=2000))
+    rows = list(Mutation.objects.filter(id__in=list(mutation_ids))
+                .order_by("seq_id", "start_position", "id")
+                .values_list("id", "mutation_type", "seq_id", "start_position", "end_position",
+                             "feature_length", "gene", "product", "sequence_change",
+                             "mutation_category", "snp_type")
+                .iterator(chunk_size=2000))
+    sizes = _sub_size_changes([row[0] for row in rows if row[1] == "SUB"])
     entries = []
     for (pk, mutation_type, seq_id, start, end_position, feature_length, gene, product,
-         change, category) in rows:
+         change, category, snp_type) in rows:
         start = int(start)
         end = _end_of(mutation_type, start, end_position, feature_length)
         entries.append({
@@ -133,6 +147,7 @@ def mutation_entries(mutation_ids):
             "product": product or "",
             "change": change or "",
             "category": category or "",
+            "glyph": glyph_for(mutation_type, snp_type, category, sizes.get(pk, 0)),
         })
     return entries
 
@@ -159,6 +174,7 @@ def circos_payload(experiment, *, with_calls=True):
         "total_length": sum(contig["length"] for contig in contigs),
         "arc_threshold": ARC_THRESHOLD,
         "colors": dict(COLORS),
+        "glyphs": [[name, words] for name, words in GLYPHS],
         "samples": samples,
         "populations": populations,
         "treatments": treatments,

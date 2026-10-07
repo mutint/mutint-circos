@@ -33,8 +33,8 @@ is subtracted at the derivation -- an ancestral mutation is in every sample, and
 would be the brightest ring of all. **The rows are tuples, not models**: `values_list` over
 the calls, then one `only()`-shaped `values_list` over the mutations named, never the JSON
 fields. Measured on the specificity example (30 samples after the ancestor is subtracted, 159
-calls): 13 ms and 50 KB of JSON. A call is about fifteen bytes, so an experiment of fifty
-thousand observations is under a megabyte.
+calls): 4 ms and 54 KB of JSON with the glyph lookup (0 SUB rows there). A call is about
+fifteen bytes, so an experiment of fifty thousand observations is under a megabyte.
 
 The reader's view filter is deliberately not applied -- frequency is shown as opacity rather
 than excluded on. The page does not render `{% view_filter_summary %}`: it said so in a
@@ -63,20 +63,36 @@ runs under node (skipped, saying why, where node is not installed). `draw`, `sta
   (it was a full circle, and read as genome where there was none). `k` is radians per base; a seq_id the reference lacks has no angle, is
   skipped, and is counted in a note under the plot.
 - **Rings** share the space between the centre hole (28% of the radius) and the band, so
-  more rings are thinner rings, between 5 and 30 px. Ring 0 is innermost. Past 12 rings the
-  plot widens to 1100 px before rings shrink, and labels are thinned to every k-th.
-- **Marks.** A point is a radial line across its ring; a span is an arc as wide as the ring,
-  a minimum 1.5 px long so a 6 kb deletion on a 4.6 Mb genome still shows. Points of one
-  type under the same 1.5 px are **bucketed** into one mark that knows how many it stands
-  for, which is what keeps 60 samples on one ring at a few thousand elements rather than
-  fifty thousand. A span crossing the origin of a circular contig is two arcs.
+  more rings are thinner rings, between 5 and 30 px apart. Ring 0 is innermost. Each is a
+  1.5 px line per contig in a grey that ramps from `#d9d9d9` (innermost, earliest) to
+  `#555555` (outermost); one ring alone is dark. Past 12 rings the plot widens to 1100 px
+  before rings shrink, and labels are thinned to every k-th.
+- **Marks.** A point is a dash across its ring, at most 12 px so a shared mutation's dashes
+  on successive rings do not join into one line; a span is a 4–6 px arc along the ring, a
+  minimum 1.5 px long so a 6 kb deletion on a 4.6 Mb genome still shows. Points of one type
+  under the same 1.5 px are **bucketed** into one mark that knows how many it stands for,
+  which is what keeps 60 samples on one ring at a few thousand elements rather than fifty
+  thousand. A span crossing the origin of a circular contig is two arcs.
+- **Glyphs.** The payload names each mutation's glyph (`mutint_common.glyphs.glyph_for`, the
+  same rule and sprite mutint-recurrent draws; `snp_type` rides along in the query and a
+  SUB's `size_change` is read from `supplemental_data` for SUB rows alone). On the outermost
+  ring every mark wears its glyph just beyond the dash, 10 px, turned to point outward
+  (`glyphTransform`: rotate by θ + 90°). On an inner ring a mark is glyphed only when
+  `glyphed(mark, outerIds)` says no mutation in it is carried by any sample on the
+  outermost ring (`carriedIds`) -- the figure's "off the line of descent" pin, with the
+  symbol for its head. A bucket with one survivor reads as surviving. The sprite is
+  `{% include "glyphs/sprite.html" %}` on the page and the panel, and `standalone` copies its
+  symbols into the file.
 - **Opacity** is the highest frequency among the ring's calls for that mark, floored at 0.25,
   and only on a ring holding a mixed sample; a clonal ring is opaque whatever the stored
   frequencies say.
 - **Ticks** share one step for every contig (the coarsest giving at most 24 majors over the
   genome), labelled in contig-local coordinates, a label dropped where it would overlap the
-  previous one. MOB is drawn over a grey underlay because the Okabe-Ito yellow is faint on
-  white.
+  previous one.
+- **Colours** are the LTEE figure's (Barrick et al. 2009, Fig. 1) for the five types it has
+  -- SNP black, DEL red, INS green, MOB blue, INV orange -- and distinct ones in the same
+  family for SUB, AMP, CON and INT. All base substitutions are one colour; the glyph carries
+  the functional class.
 - **The file** is the SVG as drawn plus a legend of the types present and a title line, an
   XML declaration naming UTF-8 and Arial first -- copied from recurrent_plot.js, for the
   reason stated there.

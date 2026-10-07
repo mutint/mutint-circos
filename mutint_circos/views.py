@@ -14,6 +14,7 @@ from mutint_common.preferences import get_preferences
 from mutint_common.util import get_user_context
 from mutint_experiment import models
 from mutint_export.util import safe_filename
+from mutint_common.glyphs import GLYPHS
 from mutint_circos.payload import ARC_THRESHOLD, COLORS, circos_payload
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ def circos(request):
                                 safe_filename(experiment.name)),
         "data": data,
         "legend": [(key, COLORS[key]) for key in COLORS],
+        "glyphs": GLYPHS,
         "arc_threshold_kb": ARC_THRESHOLD // 1000,
         "authenticated": authenticated,
         "preferences": get_preferences(user, PREFERENCE_PREFIX) if authenticated else {},

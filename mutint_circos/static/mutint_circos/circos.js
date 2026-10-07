@@ -257,7 +257,7 @@
             var title = s.mode === "population"
                 ? s.population + (s.treatment ? " under " + s.treatment : "") + ", one ring per time point, innermost earliest"
                 : (labelOf[s.sampleId] || "");
-            plot.download(plot.standalone(current, { colors: data.colors, title: title }),
+            plot.download(plot.standalone(current, { colors: data.colors, glyphs: data.glyphs, title: title }),
                           fileStem + "_circos.svg", "image/svg+xml");
         });
         var timer = null;

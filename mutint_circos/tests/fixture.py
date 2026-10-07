@@ -36,10 +36,11 @@ SMALL_DEL = ("DEL", SEQ_ID, 200, 2, "frequency=1")
 BIG_DEL = ("DEL", SEQ_ID, 1000, 6000, "frequency=1")
 AMP = ("AMP", SEQ_ID, 300, 10, 2, "frequency=1")
 MOB = ("MOB", SEQ_ID, 400, "IS1", 1, 9, "frequency=1")
+SUB = ("SUB", SEQ_ID, 500, 2, "ACGT", "frequency=1")   # 2 bp replaced by 4: lengthens
 
 #: Population 1 at 100 (two samples) and 500, population 2 at 100.
 SAMPLES = {
-    "1-100-1-1": [SNP, SMALL_DEL],
+    "1-100-1-1": [SNP, SMALL_DEL, SUB],
     "1-100-2-1": [SNP, BIG_DEL, MOB],
     "1-500-1-1": [SNP, BIG_DEL, AMP, MIXED_SNP],
     "2-100-1-1": [SNP],

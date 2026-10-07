@@ -4,17 +4,22 @@ A plugin for [MutInt](https://github.com/mutint/mutint-core): the reference geno
 circle, with the mutations of the samples you choose marked around it.
 
 **Circos**, in the sidebar's experiment section, draws every contig of the reference end to
-end around a ring, with coordinate ticks outside it. Each mutation is a mark at its position,
-coloured by type (Okabe-Ito); a deletion, amplification, inversion or conversion longer than
-5 kb is drawn as an arc over its extent. Hover a mark for what it is, where, which samples
-carry it and at what frequency.
+end around a ring, with coordinate ticks outside it. Each mutation is a dash at its position,
+coloured by type the way the LTEE figure colours them (base substitutions black, deletions
+red, insertions green, mobile elements blue, inversions orange); a deletion, amplification,
+inversion or conversion longer than 5 kb is drawn as a thick arc over its extent. On the
+outermost ring every mutation wears a symbol for its kind, the same twelve shapes
+mutint-recurrent draws. Hover a mark for what it is, where, which samples carry it and at
+what frequency.
 
 Two tabs choose what is drawn:
 
 - **Sample** -- one sample, from the same menu the Mutations page uses, on one ring.
-- **Population** -- one population as one ring per time point, innermost earliest, so a
-  lineage's mutations can be followed through time. Samples with no time point go to an
-  outermost ring of their own.
+- **Population** -- one population as one ring per time point, innermost earliest and
+  lightest, so a lineage's mutations can be followed through time. A mutation on an inner
+  ring that no sample on the outermost ring carries is capped with its symbol, the figure's
+  "off the line of descent" pin. Samples with no time point go to an outermost ring of their
+  own.
 
 The designated ancestor's mutations are subtracted before anything is drawn. The same plot,
 of every sample at once, is a panel on the experiment's Overview, and the page downloads the

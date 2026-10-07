@@ -24,13 +24,16 @@
     <p>The reference genome as a circle, with the mutations of the chosen samples marked
         around it. Each mark is coloured by its type; a deletion, amplification, inversion or
         conversion longer than {{ arc_threshold_kb }} kb is drawn over its extent. Choose one
-        sample for one ring, or a population for one ring per time point, innermost earliest.
-        The designated ancestor's mutations are left out.</p>
+        sample for one ring, or a population for one ring per time point, innermost earliest
+        and lightest. Each mutation on the outermost ring wears a symbol for its kind; on an
+        inner ring the symbol caps a mutation no sample on the outermost ring carries. The
+        designated ancestor's mutations are left out.</p>
 
     {% if not data.has_reference %}
         <p class="text-muted" data-role="no-reference">This experiment has no reference genome
             yet, so there is no circle to draw.</p>
     {% else %}
+    {% include "glyphs/sprite.html" %}
     {% comment %} Two tabs, and they are one choice: what the rings are drawn from. Sample
        is one sample, picked from the same menu the Mutations page uses; Population is one
        population as one ring per time point. The strip is the page's own rather than
@@ -88,10 +91,18 @@
     <p class="circos-summary" data-role="summary"></p>
 
     <div class="circos-legend">
-        {% for key, color in legend %}
-            <span class="circos-legend-entry"><span class="circos-swatch" style="background: {{ color }}"></span> {{ key }}</span>
-        {% endfor %}
-        <span class="circos-legend-entry text-muted">arc = DEL, AMP, INV or CON longer than {{ arc_threshold_kb }} kb</span>
+        <div class="circos-legend-row">
+            {% for key, color in legend %}
+                <span class="circos-legend-entry"><span class="circos-swatch" style="background: {{ color }}"></span> {{ key }}</span>
+            {% endfor %}
+            <span class="circos-legend-entry text-muted">arc = DEL, AMP, INV or CON longer than {{ arc_threshold_kb }} kb</span>
+        </div>
+        <div class="circos-legend-row">
+            {% for glyph, words in glyphs %}
+                <span class="circos-legend-entry"><svg class="circos-glyph"><use href="#glyph-{{ glyph }}"/></svg> {{ words }}</span>
+            {% endfor %}
+            <span class="circos-legend-entry text-muted">symbol = on the outermost ring, every mutation; inside, one the outermost ring lacks</span>
+        </div>
     </div>
 
     <div class="circos-plot" data-role="plot"></div>

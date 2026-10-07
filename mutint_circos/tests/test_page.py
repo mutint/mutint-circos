@@ -35,7 +35,7 @@ class PageTestCase(fx.CircosFixture):
         html = self.get().content.decode()
         data = payload(html)
         self.assertEqual(4, len(data["samples"]))
-        self.assertEqual(6, len(data["mutations"]))
+        self.assertEqual(7, len(data["mutations"]))
         self.assertIn('data-role="sample"', html)
         for entry in data["samples"]:
             self.assertIn('<li data-value="%d"><a href="#">%s</a></li>' % (entry["id"], entry["label"]), html)
@@ -47,6 +47,9 @@ class PageTestCase(fx.CircosFixture):
         self.assertIn("mutint_circos/circos.js", html)
         self.assertIn("mutint_circos/circos_plot.js", html)
         self.assertIn("mutint_circos/circos.css", html)
+        self.assertIn('<symbol id="glyph-tombstone"', html)
+        self.assertIn('href="#glyph-circle"', html)
+        self.assertIn("background: #000000", html)
 
     def test_the_sidebar_and_the_header_bar_carry_the_entry(self):
         html = self.get().content.decode()
@@ -80,8 +83,9 @@ class PageTestCase(fx.CircosFixture):
         data = payload(html, "circos-panel-data")
         self.assertIsNotNone(data)
         self.assertEqual([], data["calls"])
-        self.assertEqual(6, len(data["mutations"]))
+        self.assertEqual(7, len(data["mutations"]))
         self.assertIn('href="/circos/?experiment_id=%d">Circos page</a>' % self.experiment.id, html)
+        self.assertIn('<symbol id="glyph-tombstone"', html)
 
 
 class PreferencesTestCase(fx.CircosFixture):

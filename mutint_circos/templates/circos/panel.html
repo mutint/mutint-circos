@@ -11,6 +11,7 @@
     population's time points as rings, on the
     <a href="{% url 'circos' %}?experiment_id={{ experiment_id }}">Circos page</a>.</p>
 {% if circos_panel.has_reference %}
+    {% include "glyphs/sprite.html" %}
     <div class="circos-panel" data-circos-panel>
         {{ circos_panel|json_script:"circos-panel-data" }}
         <div class="circos-plot" data-role="plot"></div>

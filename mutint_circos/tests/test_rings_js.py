@@ -27,6 +27,14 @@ process.stdin.on("end", () => {
     out.arc = api.arcPath(0, 0, 10, -Math.PI / 2, -Math.PI / 2 + job.arcSpan);
     out.step = api.tickStep(job.total);
     out.geometry = (function () { const g = api.geometry(600, job.rings); return [g.ringWidth, g.r0(0), g.r0(job.rings - 1), g.inner]; }());
+    out.grey = [api.ringGrey(0, 5), api.ringGrey(4, 5), api.ringGrey(0, 1), api.ringGrey(2, 5)];
+    out.transform = api.glyphTransform(0, 0, 10, 0);
+    const outer = {1: true};
+    out.glyphed = [api.glyphed({ids: [1]}, outer), api.glyphed({ids: [2]}, outer), api.glyphed({ids: [1, 2]}, outer), api.glyphed({ids: [2]}, null)];
+    const index = api.indexCalls({calls: [[1, 10, 1], [2, 11, 1], [2, 12, 0.5]], mutations: [{id: 10, glyph: "circle"}, {id: 11, glyph: "square"}, {id: 12, glyph: "bowtie"}]});
+    out.carried = Object.keys(api.carriedIds({mutations: []}, {sampleIds: [2]}, index)).sort();
+    out.carriedAll = Object.keys(api.carriedIds({mutations: [{id: 10}, {id: 11}, {id: 12}]}, {sampleIds: null}, index)).sort();
+    out.glyphById = index.glyphById;
     process.stdout.write(JSON.stringify(out));
 });
 """
@@ -92,6 +100,20 @@ class GeometryTestCase(unittest.TestCase):
     def test_a_span_over_half_the_circle_is_two_arcs(self):
         self.assertEqual(2, run(self.job(arcSpan=4.0))["arc"].count(" A"))
         self.assertEqual(1, run(self.job(arcSpan=1.0))["arc"].count(" A"))
+
+    def test_rings_shade_from_light_to_dark_and_one_ring_is_dark(self):
+        out = run(self.job())
+        self.assertEqual(["#d9d9d9", "#555555", "#555555", "#979797"], out["grey"])
+
+    def test_a_glyph_is_turned_to_point_outward(self):
+        self.assertEqual("translate(10,0) rotate(90)", run(self.job())["transform"])
+
+    def test_a_mark_wears_its_glyph_outside_or_when_the_outer_ring_lacks_it(self):
+        out = run(self.job())
+        self.assertEqual([False, True, False, True], out["glyphed"])
+        self.assertEqual(["11", "12"], out["carried"])
+        self.assertEqual(["10", "11", "12"], out["carriedAll"])
+        self.assertEqual({"10": "circle", "11": "square", "12": "bowtie"}, out["glyphById"])
 
     def test_ticks_and_ring_radii(self):
         out = run(self.job())

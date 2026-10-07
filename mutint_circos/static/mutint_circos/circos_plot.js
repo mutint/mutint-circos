@@ -2,23 +2,31 @@
  *
  * `window.mutintCircosPlot.draw(data, state, width)` returns an SVG: the contigs laid end to
  * end clockwise from twelve o'clock as a grey band with coordinate ticks outside it, and
- * inside it one or more rings, each holding the mutations of a set of samples. A **point**
- * mutation -- a base substitution, a small indel, a mobile element at its insertion point --
- * is a radial line across its ring, coloured by type; a **span** -- a deletion, amplification,
- * inversion or conversion longer than `data.arc_threshold` -- is an arc over its extent. Two
- * points of one type under the same pixel become one mark that knows how many it stands for.
+ * inside it one or more rings, thin grey lines shaded light (innermost) to dark (outermost),
+ * each holding the mutations of a set of samples. A **point** mutation -- a base
+ * substitution, a small indel, a mobile element at its insertion point -- is a short dash
+ * across its ring, coloured by type; a **span** -- a deletion, amplification, inversion or
+ * conversion longer than `data.arc_threshold` -- is a thick arc along it. Two points of one
+ * type under the same pixel become one mark that knows how many it stands for.
+ *
+ * On the outermost ring every mark wears its **glyph** -- the shape mutint-core's sprite gives
+ * its kind (`mutint_common/glyphs.py`) -- just beyond the dash, pointing outward. On an inner
+ * ring the glyph caps a dash only when no sample on the outermost ring carries the mutation:
+ * the figure this follows drew such a mutation as a pin, "off the line of descent".
  *
  * `rings(data, state)` decides what the rings are: one for a chosen set of samples, one per
  * chosen sample, or one per time point of a population with the earliest innermost -- that
  * last being how a population's mutations are followed through time. Rings share the space
  * between the centre hole and the band, so more rings are thinner rings, down to a floor.
  *
- * The geometry (`layout`, `angle`, `geometry`, `arcPath`, `tickStep`, `rings`) is free of the
- * DOM so it can be run under node; `draw`, `standalone` and `download` need a document.
+ * The geometry (`layout`, `angle`, `geometry`, `arcPath`, `tickStep`, `rings`, `ringGrey`,
+ * `glyphed`, `glyphTransform`) is free of the DOM so it can be run under node; `draw`,
+ * `standalone` and `download` need a document.
  *
- * The design -- one ring, Okabe-Ito colours by type, long deletions as arcs -- follows
+ * The design -- one ring per clone, a dash per mutation coloured by type, long deletions as
+ * arcs -- follows the LTEE figure (Barrick et al. 2009, Fig. 1) and
  * github.com/PadmanabhanKann/genome_visualisation, which draws breseq output with NG-Circos.
- * Nothing is copied from it: that library is licensed for non-commercial use only.
+ * Nothing is copied from the latter: that library is licensed for non-commercial use only.
  */
 (function (root) {
     "use strict";
@@ -29,7 +37,13 @@
     var LABEL_GAP_DEG = 14;     // at the origin, when ring labels need a column
     var OUTER_MARGIN = 60;      // tick labels and contig names live here
     var BAND = 10;              // the genome band
-    var RING_GAP = 8;           // between the band and the outermost ring
+    var RING_GAP = 18;          // between the band and the outermost ring: room for a glyph
+    var RING_LINE = 1.5;        // a ring is a line this wide
+    var DASH_GAP = 3, DASH_MAX = 12;   // a dash stops short of the rings beside it, and is never long
+    var SPAN_MIN = 4, SPAN_MAX = 6;   // a span's stroke
+    var GLYPH = 10, GLYPH_MIN = 6;    // a glyph's size: outermost ring, and the floor inside
+    var GREY_FIRST = 0xd9, GREY_LAST = 0x55;   // the ring ramp, innermost to outermost
+    var XLINK = "http://www.w3.org/1999/xlink";
     var MIN_RING = 5, MAX_RING = 30;
     var HOLE = 0.28;            // the centre hole, as a fraction of R
     var MIN_WIDTH = 480, MAX_WIDTH = 900, WIDE_WIDTH = 1100, WIDE_AFTER = 12;
@@ -120,6 +134,46 @@
             var end = polar(cx, cy, r, p[1]);
             return " A" + fmt(r) + " " + fmt(r) + " 0 0 " + sweep + " " + fmt(end[0]) + " " + fmt(end[1]);
         }).join("");
+    }
+
+    /* The grey of ring i of n: a ramp from light, innermost and earliest, to dark. One ring
+       is drawn dark. */
+    function ringGrey(i, n) {
+        var v = n < 2 ? GREY_LAST : Math.round(GREY_FIRST + (GREY_LAST - GREY_FIRST) * i / (n - 1));
+        var hex = ("0" + v.toString(16)).slice(-2);
+        return "#" + hex + hex + hex;
+    }
+
+    function ringRadius(g, i) { return g.r0(i) + g.ringWidth / 2; }
+    // Capped, or a shared mutation's dashes on successive rings would join into one line.
+    function dashLength(g) { return Math.min(DASH_MAX, Math.max(4, g.ringWidth - DASH_GAP)); }
+    function spanStroke(g) { return Math.min(SPAN_MAX, Math.max(SPAN_MIN, g.ringWidth - 4)); }
+
+    /* The mutation ids the ring's samples carry; every mutation when the ring is all of them. */
+    function carriedIds(data, ring, index) {
+        var ids = {};
+        if (ring.sampleIds === null) {
+            data.mutations.forEach(function (m) { ids[m.id] = true; });
+            return ids;
+        }
+        ring.sampleIds.forEach(function (id) {
+            (index.callsBySample[String(id)] || []).forEach(function (call) { ids[call[1]] = true; });
+        });
+        return ids;
+    }
+
+    /* Whether a mark wears its glyph: always on the outermost (or only) ring, which passes
+       null; inside, only when none of the mark's mutations reaches the outermost ring. A
+       bucket with one survivor reads as surviving; the tooltip lists what is in it. */
+    function glyphed(mark, outerIds) {
+        if (outerIds === null || outerIds === undefined) { return true; }
+        return !mark.ids.some(function (id) { return outerIds[id]; });
+    }
+
+    /* Where a glyph sits: moved to (r, theta) and turned so its up points outward. */
+    function glyphTransform(cx, cy, r, theta) {
+        var p = polar(cx, cy, r, theta);
+        return "translate(" + fmt(p[0]) + "," + fmt(p[1]) + ") rotate(" + fmt(theta * 180 / Math.PI + 90) + ")";
     }
 
     /* An arc of radius r from t1 to t2 clockwise. */
@@ -247,11 +301,12 @@
     }
 
     function indexCalls(data) {
-        var bySample = {};
+        var bySample = {}, glyphById = {};
         (data.calls || []).forEach(function (call) {
             (bySample[String(call[0])] = bySample[String(call[0])] || []).push(call);
         });
-        return { callsBySample: bySample };
+        (data.mutations || []).forEach(function (m) { glyphById[m.id] = m.glyph; });
+        return { callsBySample: bySample, glyphById: glyphById };
     }
 
     function opacityOf(mark, ring, useFrequency) {
@@ -347,43 +402,60 @@
         svg.appendChild(band);
     }
 
+    function glyphUse(name, size, color, transform) {
+        var u = el("use", { href: "#glyph-" + name, x: -size / 2, y: -size / 2, width: size, height: size,
+                            fill: color, stroke: "none", transform: transform, "class": "circos-glyph-mark" });
+        u.setAttributeNS(XLINK, "xlink:href", "#glyph-" + name);
+        return u;
+    }
+
+    /* One ring: a thin grey line per contig, a dash per point, a thick arc per span, and the
+       glyph on whichever marks `glyphed` says. `options.outerIds` is the outermost ring's
+       carried set, or null on the outermost ring itself. */
     function drawRing(svg, data, ring, i, lay, g, index, options) {
-        var r0 = g.r0(i), r1 = r0 + g.ringWidth - 2;
-        var mid = (r0 + r1) / 2;
+        var n = Number(svg.getAttribute("data-rings")) || 1;
+        var rl = ringRadius(g, i);
+        var d = dashLength(g);
+        var size = i === n - 1 ? GLYPH : Math.max(GLYPH_MIN, Math.min(GLYPH, g.ringWidth - 3));
         var group = el("g", { "class": "circos-ring", "data-ring": i });
-        // The ring's background spans the genome and nothing else: over the gap between
-        // contigs and at the origin there is no reference to be mutated, so there is no ring.
+        // The line spans the genome and nothing else: over the gap between contigs and at the
+        // origin there is no reference to be mutated, so there is no ring.
         lay.contigs.forEach(function (c) {
-            group.appendChild(el("path", { d: annulusPath(g.cx, g.cy, r0, r1, c.theta0, c.theta1),
-                                           fill: "#eee", stroke: "none" }));
+            group.appendChild(el("path", { d: arcPath(g.cx, g.cy, rl, c.theta0, c.theta1), fill: "none",
+                                           stroke: ringGrey(i, n), "stroke-width": RING_LINE, "class": "circos-ring-line" }));
         });
-        var marks = marksFor(data, ring, lay, r1, index);
-        var stroke = r1 - r0;
+        var marks = marksFor(data, ring, lay, rl, index);
+        var stroke = spanStroke(g);
         marks.spans.forEach(function (span) {
-            var opacity = opacityOf(span, ring, options.frequency);
+            var color = data.colors[span.type] || "#333";
+            var node = el("g", { "class": "circos-mark", "data-ids": span.ids.join(","), "data-type": span.type,
+                                 "data-ring": i, opacity: opacityOf(span, ring, options.frequency) });
             span.pieces.forEach(function (piece) {
                 var t1 = piece[0], t2 = piece[1];
-                var minAngle = MIN_ARC_PX / mid;
+                var minAngle = MIN_ARC_PX / rl;
                 if (t2 - t1 < minAngle) { var c = (t1 + t2) / 2; t1 = c - minAngle / 2; t2 = c + minAngle / 2; }
-                var node = el("path", { d: arcPath(g.cx, g.cy, mid, t1, t2), fill: "none",
-                                        stroke: data.colors[span.type] || "#333", "stroke-width": fmt(stroke),
-                                        "stroke-opacity": opacity, "data-ids": span.ids.join(","),
-                                        "data-type": span.type, "data-ring": i, "class": "circos-mark" });
-                node.__circos = span;
-                group.appendChild(node);
+                node.appendChild(el("path", { d: arcPath(g.cx, g.cy, rl, t1, t2), fill: "none",
+                                              stroke: color, "stroke-width": fmt(stroke) }));
             });
+            if (glyphed(span, options.outerIds)) {
+                var first = span.pieces[0];
+                node.appendChild(glyphUse(index.glyphById[span.ids[0]] || "square", size, color,
+                                          glyphTransform(g.cx, g.cy, rl + stroke / 2 + 1 + size / 2, (first[0] + first[1]) / 2)));
+            }
+            node.__circos = span;
+            group.appendChild(node);
         });
         marks.points.forEach(function (point) {
-            var a = polar(g.cx, g.cy, r0, point.theta), b = polar(g.cx, g.cy, r1, point.theta);
-            var opacity = opacityOf(point, ring, options.frequency);
-            if (point.type === "MOB") {
-                group.appendChild(el("line", { x1: fmt(a[0]), y1: fmt(a[1]), x2: fmt(b[0]), y2: fmt(b[1]),
-                                                stroke: "#777", "stroke-width": 2.5, "stroke-opacity": opacity }));
+            var a = polar(g.cx, g.cy, rl - d / 2, point.theta), b = polar(g.cx, g.cy, rl + d / 2, point.theta);
+            var color = data.colors[point.type] || "#333";
+            var node = el("g", { "class": "circos-mark", "data-ids": point.ids.join(","), "data-type": point.type,
+                                 "data-ring": i, opacity: opacityOf(point, ring, options.frequency) });
+            node.appendChild(el("line", { x1: fmt(a[0]), y1: fmt(a[1]), x2: fmt(b[0]), y2: fmt(b[1]),
+                                          stroke: color, "stroke-width": 1.5 }));
+            if (glyphed(point, options.outerIds)) {
+                node.appendChild(glyphUse(index.glyphById[point.ids[0]] || "square", size, color,
+                                          glyphTransform(g.cx, g.cy, rl + d / 2 + 1 + size / 2, point.theta)));
             }
-            var node = el("line", { x1: fmt(a[0]), y1: fmt(a[1]), x2: fmt(b[0]), y2: fmt(b[1]),
-                                    stroke: data.colors[point.type] || "#333", "stroke-width": 1.5,
-                                    "stroke-opacity": opacity, "data-ids": point.ids.join(","),
-                                    "data-type": point.type, "data-ring": i, "class": "circos-mark" });
             node.__circos = point;
             group.appendChild(node);
         });
@@ -398,7 +470,7 @@
         ringList.forEach(function (ring, i) {
             if (ring.label === null || ring.label === undefined) { return; }
             if (i % every !== 0 && i !== ringList.length - 1) { return; }
-            var y = g.cy - (g.r0(i) + (g.ringWidth - 2) / 2);
+            var y = g.cy - ringRadius(g, i);
             labels.appendChild(el("text", { x: g.cx, y: fmt(y), "font-size": Math.min(FONT - 1, Math.max(7, g.ringWidth - 2)),
                                              "text-anchor": "middle", "dominant-baseline": "middle",
                                              fill: "#333" }, ring.label));
@@ -420,8 +492,12 @@
         var index = indexCalls(data);
         var skipped = 0;
         var labels = state.labels !== false;
+        var outerIds = ringList.length > 1 ? carriedIds(data, ringList[ringList.length - 1], index) : null;
         ringList.forEach(function (ring, i) {
-            skipped += drawRing(svg, data, ring, i, lay, g, index, { frequency: state.frequency !== false });
+            skipped += drawRing(svg, data, ring, i, lay, g, index, {
+                frequency: state.frequency !== false,
+                outerIds: i === ringList.length - 1 ? null : outerIds
+            });
         });
         drawGenome(svg, lay, g, labels);
         if (labels) { drawRingLabels(svg, ringList, g); }
@@ -434,34 +510,58 @@
         return el("style", {}, "text{font-family:" + FILE_FONT_FAMILY + "}");
     }
 
-    /* The SVG as a file: a legend of the types drawn and a title beneath, so it stands alone. */
+    /* The SVG as a file: the sprite's symbols copied in, a legend of the types and the glyphs
+       drawn, a note and a title beneath, so it stands alone. */
     function standalone(svg, options) {
         options = options || {};
         var copy = svg.cloneNode(true);
         var width = Number(svg.getAttribute("width")), height = Number(svg.getAttribute("height"));
         var defs = el("defs");
+        var sprite = document.querySelector("[data-glyph-sprite] defs");
+        if (sprite) {
+            Array.prototype.forEach.call(sprite.querySelectorAll("symbol"), function (symbol) {
+                defs.appendChild(symbol.cloneNode(true));
+            });
+        }
         defs.appendChild(fileStyle());
         copy.insertBefore(defs, copy.firstChild);
-        var types = {};
+        var types = {}, glyphs = {};
         Array.prototype.forEach.call(svg.querySelectorAll("[data-type]"), function (node) {
             types[node.getAttribute("data-type")] = true;
         });
-        var order = Object.keys(options.colors || {});
-        var present = order.filter(function (t) { return types[t]; });
-        var legend = el("g", { transform: "translate(16," + (height + 8) + ")" });
-        var x = 0;
-        present.forEach(function (type) {
-            legend.appendChild(el("rect", { x: x, y: 2, width: 12, height: 12, fill: options.colors[type] }));
-            legend.appendChild(el("text", { x: x + 16, y: 12, "font-size": FONT, fill: "#222" }, type));
-            x += 16 + textWidth(type) + 14;
+        Array.prototype.forEach.call(svg.querySelectorAll("use"), function (node) {
+            glyphs[(node.getAttribute("href") || "").replace("#glyph-", "")] = true;
         });
-        var y = 30;
+        var legend = el("g", { transform: "translate(16," + (height + 8) + ")" });
+        var x = 0, y = 0;
+        var LINE = 18, SW = 12;
+        Object.keys(options.colors || {}).filter(function (t) { return types[t]; }).forEach(function (type) {
+            legend.appendChild(el("rect", { x: x, y: y + 2, width: SW, height: SW, fill: options.colors[type] }));
+            legend.appendChild(el("text", { x: x + SW + 4, y: y + SW, "font-size": FONT, fill: "#222" }, type));
+            x += SW + 4 + textWidth(type) + 14;
+        });
+        y += LINE; x = 0;
+        (options.glyphs || []).filter(function (entry) { return glyphs[entry[0]]; }).forEach(function (entry) {
+            var w = SW + 4 + textWidth(entry[1]) + 14;
+            if (x + w > width - 32 && x > 0) { x = 0; y += LINE; }
+            var u = el("use", { href: "#glyph-" + entry[0], x: x, y: y + 2, width: SW, height: SW, fill: "#333" });
+            u.setAttributeNS(XLINK, "xlink:href", "#glyph-" + entry[0]);
+            legend.appendChild(u);
+            legend.appendChild(el("text", { x: x + SW + 4, y: y + SW, "font-size": FONT, fill: "#222" }, entry[1]));
+            x += w;
+        });
+        y += LINE;
+        if (Number(svg.getAttribute("data-rings")) > 1) {
+            legend.appendChild(el("text", { x: 0, y: y + SW, "font-size": FONT, fill: "#555" },
+                                  "Rings are time points, innermost earliest. A symbol inside the outermost ring marks a mutation no sample on that ring carries."));
+            y += LINE;
+        }
         if (options.title) {
-            legend.appendChild(el("text", { x: 0, y: y, "font-size": FONT, fill: "#555" }, options.title));
-            y += 16;
+            legend.appendChild(el("text", { x: 0, y: y + SW, "font-size": FONT, fill: "#555" }, options.title));
+            y += LINE;
         }
         copy.appendChild(legend);
-        var total = height + 8 + y;
+        var total = height + 8 + y + 4;
         copy.setAttribute("height", total);
         copy.setAttribute("viewBox", "0 0 " + width + " " + total);
         copy.removeAttribute("data-circos");
@@ -483,6 +583,8 @@
     var api = { layout: layout, angle: angle, polar: polar, geometry: geometry, plotWidth: plotWidth,
                 arcPath: arcPath, annulusPath: annulusPath, tickStep: tickStep, fmtBp: fmtBp,
                 rings: rings, marksFor: marksFor, indexCalls: indexCalls, opacityOf: opacityOf,
+                ringGrey: ringGrey, ringRadius: ringRadius, dashLength: dashLength, spanStroke: spanStroke,
+                carriedIds: carriedIds, glyphed: glyphed, glyphTransform: glyphTransform,
                 draw: draw, standalone: standalone, download: download, UNTIMED: UNTIMED };
     root.mutintCircosPlot = api;
     if (typeof module !== "undefined" && module.exports) { module.exports = api; }

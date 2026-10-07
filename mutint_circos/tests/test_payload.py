@@ -1,6 +1,7 @@
 """The payload: contigs from the reference, samples in order, present calls with the ancestor
 subtracted, and each mutation's extent and whether it draws as an arc."""
 
+from mutint_common.glyphs import GLYPHS
 from mutint_sample.models import ReferenceSequences
 
 from mutint_circos import payload
@@ -46,7 +47,7 @@ class PayloadTestCase(fx.CircosFixture):
         data = payload.circos_payload(self.experiment)
         by_key = {(m["type"], m["start"]): m for m in data["mutations"]}
         self.assertEqual({("SNP", 100), ("SNP", 150), ("DEL", 200), ("DEL", 1000),
-                          ("AMP", 300), ("MOB", 400)}, set(by_key))
+                          ("AMP", 300), ("MOB", 400), ("SUB", 500)}, set(by_key))
         big = by_key[("DEL", 1000)]
         self.assertTrue(big["span"])
         self.assertEqual((1000, 6999, 6000), (big["start"], big["end"], big["length"]))
@@ -58,6 +59,19 @@ class PayloadTestCase(fx.CircosFixture):
         self.assertEqual(100, by_key[("SNP", 100)]["end"])
         self.assertFalse(by_key[("MOB", 400)]["span"])
         self.assertIn("IS1", by_key[("MOB", 400)]["change"])
+
+    def test_each_mutation_names_its_glyph(self):
+        data = payload.circos_payload(self.experiment)
+        names = {name for name, _ in GLYPHS}
+        by_key = {(m["type"], m["start"]): m["glyph"] for m in data["mutations"]}
+        self.assertTrue(set(by_key.values()) <= names, by_key)
+        self.assertEqual("triangle", by_key[("DEL", 200)])
+        self.assertEqual("trapezoid-down", by_key[("DEL", 1000)])
+        self.assertEqual("bowtie", by_key[("MOB", 400)])
+        self.assertEqual("triangle-down", by_key[("AMP", 300)])
+        self.assertEqual("triangle-down", by_key[("SUB", 500)], "a SUB that lengthens draws as an insertion")
+        self.assertEqual([list(entry) for entry in GLYPHS], data["glyphs"])
+        self.assertEqual("#000000", data["colors"]["SNP"])
 
     def test_the_calls_name_present_observations_with_their_frequency(self):
         data = payload.circos_payload(self.experiment)
@@ -80,7 +94,7 @@ class PayloadTestCase(fx.CircosFixture):
     def test_the_panel_payload_has_the_mutations_and_no_calls(self):
         data = payload.circos_payload(self.experiment, with_calls=False)
         self.assertEqual([], data["calls"])
-        self.assertEqual(6, len(data["mutations"]))
+        self.assertEqual(7, len(data["mutations"]))
 
     def test_is_span_draws_the_boundary_at_the_threshold(self):
         self.assertFalse(payload.is_span("DEL", 1, payload.ARC_THRESHOLD))
