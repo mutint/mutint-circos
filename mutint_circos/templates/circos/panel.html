@@ -1,0 +1,21 @@
+{% load static %}
+{% comment %} The body of the Overview panel: the heading above it and the rule between panels
+   are drawn by /stats. See mutint_common/panel_registry.py. Every sample's mutations on one
+   ring, drawn by the same script as the page; which samples, and rings by time, are the
+   page's. {% endcomment %}
+<link rel="stylesheet" href="{% static 'mutint_circos/circos.css' %}?v={{ asset_version }}">
+<script src="{% static 'mutint_circos/circos_plot.js' %}?v={{ asset_version }}"></script>
+<script src="{% static 'mutint_circos/circos.js' %}?v={{ asset_version }}"></script>
+<p class="text-muted" style="margin-bottom: 6px;">Every sample's mutations on the reference
+    genome, coloured by type. The designated ancestor's are left out. Choose samples, or a
+    population's time points as rings, on the
+    <a href="{% url 'circos' %}?experiment_id={{ experiment_id }}">Circos page</a>.</p>
+{% if circos_panel.has_reference %}
+    <div class="circos-panel" data-circos-panel>
+        {{ circos_panel|json_script:"circos-panel-data" }}
+        <div class="circos-plot" data-role="plot"></div>
+        <div class="circos-tip" data-role="tip" hidden></div>
+    </div>
+{% else %}
+    <p class="text-muted">This experiment has no reference genome yet, so there is no circle to draw.</p>
+{% endif %}

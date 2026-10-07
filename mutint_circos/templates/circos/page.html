@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load view_filter %}
+{% comment %} The Circos page. The payload travels as JSON (`circos-data`): every sample,
+   every present call and every mutation named, with the designated ancestor subtracted.
+   circos.js owns the controls and decides which samples go on which ring; circos_plot.js
+   draws the SVG. {% endcomment %}
+{% block title %}{{ title }}{% endblock %}
+{% block scripts_and_style %}
+    <link rel="stylesheet" href="{% static 'mutint_circos/circos.css' %}?v={{ asset_version }}">
+    <script src="{% static 'mutint_circos/circos_plot.js' %}?v={{ asset_version }}"></script>
+    <script src="{% static 'mutint_circos/circos.js' %}?v={{ asset_version }}"></script>
+{% endblock %}
+{% block header %}{% include "experiment_header.html" with page="Circos" %}{% endblock %}
+{% block content %}
+<div class="mutint-circos" data-circos
+     data-experiment-id="{{ experiment_id }}"
+     data-file-stem="{{ file_stem }}"
+     data-authenticated="{% if authenticated %}1{% else %}0{% endif %}"
+     data-preferences-url="{{ preferences_url }}">
+    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    {{ data|json_script:"circos-data" }}
+    {% if authenticated %}{{ preferences|json_script:"circos-prefs" }}{% endif %}
+
+    <p>The reference genome as a circle, with the mutations of the chosen samples marked
+        around it. Each mark is coloured by its type; a deletion, amplification, inversion or
+        conversion longer than {{ arc_threshold_kb }} kb is drawn over its extent. Choose
+        samples for one ring, or a population for one ring per time point, innermost
+        earliest.</p>
+
+    {% if not data.has_reference %}
+        <p class="text-muted" data-role="no-reference">This experiment has no reference genome
+            yet, so there is no circle to draw.</p>
+    {% else %}
+    <div class="btn-row circos-controls">
+        <div class="btn-group" role="group" data-role="mode-group">
+            <button type="button" class="btn btn-default active" data-mode="samples">Samples</button>
+            <button type="button" class="btn btn-default" data-mode="population">Population by time</button>
+        </div>
+        <label class="circos-check" data-role="stack-group" title="One ring per chosen sample, in the order the Samples page lists them, rather than every chosen sample on one ring">
+            <input type="checkbox" data-role="stack"/> One ring per sample
+        </label>
+        <label class="view-filter-field circos-select" data-role="population-group">Population:
+            <select class="form-control" data-role="population" aria-label="Population">
+                {% for name in data.populations %}
+                    <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        {% if data.treatments %}
+        <label class="view-filter-field circos-select" data-role="treatment-group">Treatment:
+            <select class="form-control" data-role="treatment" aria-label="Treatment">
+                <option value="">any</option>
+                {% for name in data.treatments %}
+                    <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        {% endif %}
+        <label class="circos-check" title="Draw a mutation found at less than 100% in a mixed-population sample paler, in proportion to its frequency">
+            <input type="checkbox" data-role="frequency" checked/> Frequency as opacity
+        </label>
+        <label class="circos-check" title="The coordinate ticks and the contig names around the outside">
+            <input type="checkbox" data-role="labels" checked/> Labels
+        </label>
+        <button type="button" class="btn btn-default" data-export="svg">Download SVG</button>
+    </div>
+
+    <div class="circos-samples" data-role="samples-view">
+        {% comment %} Highlighting is the selection, as the genome browser's sample menu;
+           every row starts on, and the ones a reader turned off are remembered as the hidden
+           set so a sample imported later shows. {% endcomment %}
+        {% include "select_list.html" with items=data.samples id="circos-samples" selected_ids=sample_ids empty_message="This experiment has no samples yet." %}
+    </div>
+
+    <p class="circos-summary" data-role="summary"></p>
+
+    <div class="circos-legend">
+        {% for key, color in legend %}
+            <span class="circos-legend-entry"><span class="circos-swatch" style="background: {{ color }}"></span> {{ key }}</span>
+        {% endfor %}
+        <span class="circos-legend-entry text-muted">arc = DEL, AMP, INV or CON longer than {{ arc_threshold_kb }} kb</span>
+    </div>
+
+    <div class="circos-plot" data-role="plot"></div>
+    <div class="circos-tip" data-role="tip" hidden></div>
+    <p class="text-muted circos-note" data-role="note"></p>
+    {% endif %}
+
+    <div class="circos-filter-summary">
+        {% view_filter_summary own_rules="Every stored mutation of the chosen samples is drawn -- not through your view filter: frequency is shown as opacity rather than excluded on. The experiment's designated ancestor is subtracted before anything is drawn." %}
+    </div>
+</div>
+{% endblock %}

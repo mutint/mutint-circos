@@ -1,0 +1,40 @@
+/* The Circos page: the controls, the sample picker, the legend, the plot and its tooltip. */
+
+.circos-controls { align-items: center; }
+.circos-check { font-weight: normal; margin: 0 0 0 6px; }
+.circos-check input { margin-right: 4px; }
+.circos-select select { display: inline-block; width: auto; }
+.circos-controls [hidden] { display: none !important; }
+
+/* The picker is the select list in a box of its own rather than a dropdown, so the rows
+   scroll under a fixed height and every chosen sample stays in view. */
+.circos-samples { margin: 8px 0; }
+.circos-samples .mutint-select-list {
+    max-height: 220px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;
+    padding: 4px 0; margin: 4px 0 0; list-style: none;
+}
+.circos-samples .mutint-select-list > li > a { display: block; padding: 2px 10px; }
+.circos-samples[hidden] { display: none; }
+
+.circos-summary { margin: 8px 0 4px; font-weight: bold; }
+.circos-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 10px; }
+.circos-legend-entry { white-space: nowrap; }
+.circos-swatch {
+    display: inline-block; width: 12px; height: 12px; vertical-align: middle;
+    border: 1px solid #999; margin-right: 2px;
+}
+
+.circos-plot { position: relative; max-width: 100%; }
+.circos-plot svg { display: block; max-width: 100%; height: auto; }
+.circos-mark { cursor: pointer; }
+.circos-tip {
+    position: absolute; z-index: 20; pointer-events: none; max-width: 320px;
+    background: #fff; border: 1px solid #999; border-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    padding: 6px 8px; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere;
+}
+.circos-tip[hidden] { display: none; }
+.circos-tip-head { font-weight: bold; }
+.circos-tip-mutation + .circos-tip-mutation { margin-top: 6px; border-top: 1px solid #eee; padding-top: 4px; }
+.circos-note:empty { display: none; }
+.circos-panel .circos-plot { position: relative; }
+.circos-filter-summary { margin-top: 10px; }

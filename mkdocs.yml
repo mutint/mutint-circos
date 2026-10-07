@@ -1,0 +1,9 @@
+# mutint-circos's documentation, read through an assembled project's manual --
+# `./mutint docs` collects it. The page is under "Using MutInt" because that is who it is for.
+
+site_name: mutint-circos
+site_description: The reference genome as a circle, with each sample's mutations around it
+
+nav:
+  - Using MutInt:
+      - Circos: using/circos.md

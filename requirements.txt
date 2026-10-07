@@ -1,0 +1,6 @@
+# Install dependencies from mutint-core first:
+#   pip install -r mutint-core/requirements.txt
+#
+# mutint-circos-specific additions (if any):
+#
+# There are none. The plot is the plugin's own SVG, drawn in the browser from core's models.
