@@ -5,16 +5,12 @@
 .circos-check input { margin-right: 4px; }
 .circos-select select { display: inline-block; width: auto; }
 .circos-controls [hidden] { display: none !important; }
+.circos-tabs { margin-bottom: 12px; }
+.circos-tabs > li > a { padding: 6px 14px; }
+.circos-pane { margin: 0 0 10px; }
+.circos-pane[hidden] { display: none; }
+.circos-pane .btn-group { margin-left: 4px; }
 
-/* The picker is the select list in a box of its own rather than a dropdown, so the rows
-   scroll under a fixed height and every chosen sample stays in view. */
-.circos-samples { margin: 8px 0; }
-.circos-samples .mutint-select-list {
-    max-height: 220px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;
-    padding: 4px 0; margin: 4px 0 0; list-style: none;
-}
-.circos-samples .mutint-select-list > li > a { display: block; padding: 2px 10px; }
-.circos-samples[hidden] { display: none; }
 
 .circos-summary { margin: 8px 0 4px; font-weight: bold; }
 .circos-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 10px; }

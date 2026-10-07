@@ -84,9 +84,14 @@ class GeometryTestCase(unittest.TestCase):
         self.assertEqual(2, len(out["rings"]))
         self.assertEqual([5], out["rings"][0][1])
 
-    def test_a_span_over_half_the_circle_sets_the_large_arc_flag(self):
-        self.assertIn(" 0 1 1 ", run(self.job(arcSpan=4.0))["arc"])
-        self.assertIn(" 0 0 1 ", run(self.job(arcSpan=1.0))["arc"])
+    def test_sample_mode_is_one_ring_of_one_sample(self):
+        out = run(self.job(state={"mode": "sample", "sampleId": "2"}))
+        self.assertEqual([[None, [2], True]], out["rings"])
+        self.assertEqual([], run(self.job(state={"mode": "sample", "sampleId": "99"}))["rings"])
+
+    def test_a_span_over_half_the_circle_is_two_arcs(self):
+        self.assertEqual(2, run(self.job(arcSpan=4.0))["arc"].count(" A"))
+        self.assertEqual(1, run(self.job(arcSpan=1.0))["arc"].count(" A"))
 
     def test_ticks_and_ring_radii(self):
         out = run(self.job())

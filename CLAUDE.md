@@ -1,7 +1,8 @@
 # CLAUDE.md — mutint-circos
 
 The **Circos** page, at `/circos/` in the sidebar's experiment section: the reference genome
-drawn as a circle, with the mutations of the chosen samples marked around it -- each a mark
+drawn as a circle, with the mutations of one sample -- or of one population, as one ring per
+time point -- marked around it -- each a mark
 coloured by its type, a long deletion, amplification, inversion or conversion an arc over
 its extent. One page, an Overview panel, an About section, no models, no migrations, nothing
 stored. `apps.py` registers all four from one `ready()`; `payload.py` is the derivation; the
@@ -36,7 +37,8 @@ calls): 13 ms and 50 KB of JSON. A call is about fifteen bytes, so an experiment
 thousand observations is under a megabyte.
 
 The reader's view filter is deliberately not applied -- frequency is shown as opacity rather
-than excluded on -- and `{% view_filter_summary own_rules=... %}` says so.
+than excluded on. The page does not render `{% view_filter_summary %}`: it said so in a
+sentence under the plot, and that sentence was asked off the page.
 
 **A mutation's extent** is `end_position` where the annotator filled it, else `start +
 feature_length − 1` for the four span types, else the start. `span` is true for DEL, AMP,
@@ -56,7 +58,9 @@ runs under node (skipped, saying why, where node is not installed). `draw`, `sta
 
 - **Layout.** Contigs run end to end clockwise from twelve o'clock with 1.5° between them;
   with more than one ring the gap at the origin widens to 14° so ring labels have a column
-  at twelve o'clock. `k` is radians per base; a seq_id the reference lacks has no angle, is
+  at twelve o'clock. A ring's grey background is drawn per contig, over the genome and
+  nowhere else: across a gap there is no reference to be mutated, so there is no ring
+  (it was a full circle, and read as genome where there was none). `k` is radians per base; a seq_id the reference lacks has no angle, is
   skipped, and is counted in a note under the plot.
 - **Rings** share the space between the centre hole (28% of the radius) and the band, so
   more rings are thinner rings, between 5 and 30 px. Ring 0 is innermost. Past 12 rings the
@@ -77,12 +81,16 @@ runs under node (skipped, saying why, where node is not installed). `draw`, `sta
   XML declaration naming UTF-8 and Arial first -- copied from recurrent_plot.js, for the
   reason stated there.
 
-`circos.js` owns the controls, the preferences (`circos.mode`, `circos.stack`,
-`circos.frequency`, `circos.labels`, and per experiment `circos.samples.<id>` as the hidden
-set, `circos.population.<id>`, `circos.treatment.<id>`), the summary line and the tooltip --
-one box the plot shares, filled from `node.__circos` on the mark under the pointer. The
-sample picker is core's `select_list.html` with `mutintSelectList` in toggle mode, in a
-scrolling box rather than a dropdown.
+`circos.js` owns the two tabs, the preferences (`circos.mode`, `circos.frequency`,
+`circos.labels`, and per experiment `circos.sample.<id>`, `circos.population.<id>`,
+`circos.treatment.<id>`), the summary line and the tooltip -- one box the plot shares,
+filled from `node.__circos` on the mark under the pointer. **The Sample tab draws one
+sample**, chosen from the Mutations page's own menu shape -- a dropdown whose button carries
+the chosen name -- rather than a multi-select: a set of samples on one ring was built first
+and taken out, since overlaid samples cannot be told apart at a mark. `rings()` still
+accepts a `samples` mode with a list and a `stack` flag, which the node test covers and
+nothing on the page uses. The tab strip is the page's own, not `control_tabs.html`, whose
+tabs are the mutation tables'.
 
 ## Rings by time, and what it cost
 
@@ -95,7 +103,8 @@ it does not do, and why, is the part worth keeping:
   Samples mode may read better.
 - **Samples at one time point share a ring**, overplotted. A per-sample jitter was considered
   and left out because on a genome axis a jitter reads as a position. The tooltip names
-  which samples carry the mark.
+  which samples carry the mark. This is also why the Sample tab draws one sample: several
+  samples on one ring have the same problem with no time to justify it.
 - **Persistence is read by eye**: a mark at one angle on successive rings is the same
   mutation only if its id matches, which the tooltip shows. A radial connector per mutation
   across the rings it appears on is the natural next step and was not built.

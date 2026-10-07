@@ -25,9 +25,10 @@ class PageTestCase(fx.CircosFixture):
         self.assertEqual(200, response.status_code)
         html = response.content.decode()
         self.assertIn('class="mutint-experiment-name">E</span></b> <span class="mutint-header-sep">&raquo;</span> Circos', html)
-        self.assertIn('data-mode="population"', html)
-        self.assertIn('data-role="stack"', html)
+        self.assertIn('data-mode="sample">Sample</a>', html)
+        self.assertIn('data-mode="population">Population</a>', html)
         self.assertIn('data-export="svg"', html)
+        self.assertNotIn("view filter", html)
         self.assertIn("longer than 5 kb", html)
 
     def test_the_payload_and_the_picker_list_the_samples(self):
@@ -35,8 +36,9 @@ class PageTestCase(fx.CircosFixture):
         data = payload(html)
         self.assertEqual(4, len(data["samples"]))
         self.assertEqual(6, len(data["mutations"]))
+        self.assertIn('data-role="sample"', html)
         for entry in data["samples"]:
-            self.assertIn('<li data-value="%d" class="active">' % entry["id"], html)
+            self.assertIn('<li data-value="%d"><a href="#">%s</a></li>' % (entry["id"], entry["label"]), html)
         self.assertIn('<option value="1">1</option>', html)
         self.assertNotIn('data-role="treatment"', html)
 
@@ -45,7 +47,6 @@ class PageTestCase(fx.CircosFixture):
         self.assertIn("mutint_circos/circos.js", html)
         self.assertIn("mutint_circos/circos_plot.js", html)
         self.assertIn("mutint_circos/circos.css", html)
-        self.assertIn("not through your view filter", html)
 
     def test_the_sidebar_and_the_header_bar_carry_the_entry(self):
         html = self.get().content.decode()

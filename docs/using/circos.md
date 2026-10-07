@@ -27,11 +27,9 @@ closer together than the plot can separate become one mark that says how many it
 
 ## Choosing what to draw
 
-**Samples** lists every sample in the experiment; click to turn each on or off, or use
-*Select all* and *Select none*. Every chosen sample's mutations share one ring. Tick **One
-ring per sample** for a ring each, in the order the Samples page lists them, innermost first.
+**Sample** draws one sample on one ring, chosen from the same menu the Mutations page uses.
 
-**Population by time** takes one population (and a treatment, where the experiment records
+**Population** takes one population (and a treatment, where the experiment records
 any) and draws one ring per time point, innermost earliest, so a lineage's mutations can be
 followed outward through time. Samples at the same time point share a ring. Samples with no
 time point are drawn on an outermost ring labelled *untimed*; the line under the controls
@@ -42,7 +40,7 @@ sample paler, in proportion to its frequency; a clonal sample's marks are always
 does nothing when no mixed sample is drawn.
 
 The experiment's designated ancestor is subtracted before anything is drawn, and your view
-filter is not applied: every stored mutation of the chosen samples is on the plot.
+filter is not applied: every stored mutation of the chosen sample is on the plot.
 
 **Download SVG** saves the plot as drawn, with a legend of the types present and a line
 saying what was chosen, ready for Illustrator (an XML declaration naming UTF-8, Arial first).

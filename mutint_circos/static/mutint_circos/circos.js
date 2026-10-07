@@ -2,10 +2,13 @@
  *
  * The payload arrives whole as JSON (`#circos-data`); this script reads the controls into a
  * state, hands it to circos_plot.js, and redraws on every change -- no request is made after
- * the page loads. Six choices are remembered through mutintPreferences: `circos.mode`,
- * `circos.stack`, `circos.frequency`, `circos.labels`, and per experiment
- * `circos.samples.<experiment>` (the hidden set, so a sample imported later shows) and
- * `circos.population.<experiment>` / `circos.treatment.<experiment>`.
+ * the page loads. Five choices are remembered through mutintPreferences: `circos.mode`,
+ * `circos.frequency`, `circos.labels`, and per experiment `circos.sample.<experiment>`,
+ * `circos.population.<experiment>` and `circos.treatment.<experiment>`.
+ *
+ * The Sample tab's menu is the Mutations page's sample picker: a dropdown whose button
+ * carries the chosen sample's name and whose chosen row is the one marked `active` -- one
+ * sample at a time, chosen here without a request.
  *
  * The tooltip is one box the whole plot shares, filled from the mark under the pointer:
  * what the mutation is, where, which samples carry it and at what frequency.
@@ -120,36 +123,42 @@
         var tip = root.querySelector("[data-role='tip']");
         var summary = root.querySelector("[data-role='summary']");
         var note = root.querySelector("[data-role='note']");
-        var samplesView = root.querySelector("[data-role='samples-view']");
-        var stackGroup = root.querySelector("[data-role='stack-group']");
-        var stackBox = root.querySelector("[data-role='stack']");
-        var populationGroup = root.querySelector("[data-role='population-group']");
+        var sampleView = root.querySelector("[data-role='sample-view']");
+        var sampleMenu = root.querySelector("[data-role='sample']");
+        var sampleName = root.querySelector("[data-role='sample-name']");
+        var populationView = root.querySelector("[data-role='population-view']");
         var populationSelect = root.querySelector("[data-role='population']");
-        var treatmentGroup = root.querySelector("[data-role='treatment-group']");
         var treatmentSelect = root.querySelector("[data-role='treatment']");
         var frequencyBox = root.querySelector("[data-role='frequency']");
         var labelsBox = root.querySelector("[data-role='labels']");
-        var list = root.querySelector("#circos-samples");
-        var samplesKey = "circos.samples." + experimentId;
+        var sampleKey = "circos.sample." + experimentId;
         var populationKey = "circos.population." + experimentId;
         var treatmentKey = "circos.treatment." + experimentId;
+        var labelOf = {};
+        data.samples.forEach(function (sample) { labelOf[String(sample.id)] = sample.label; });
 
-        var mode = prefs.get("circos.mode", "samples") === "population" ? "population" : "samples";
-        stackBox.checked = !!prefs.get("circos.stack", false);
+        var mode = prefs.get("circos.mode", "sample") === "population" ? "population" : "sample";
         frequencyBox.checked = prefs.get("circos.frequency", true) !== false;
         labelsBox.checked = prefs.get("circos.labels", true) !== false;
 
-        var hidden = window.mutintPreferences.hiddenSet(prefs.get(samplesKey, null));
-        var picker = window.mutintSelectList(list, {
-            toggle: true,
-            onChange: function () {
-                var off = picker.rows().filter(function (row) { return !picker.isSelected(row); })
-                    .map(function (row) { return row.getAttribute("data-value"); });
-                prefs.set(samplesKey, { hidden: off });
-                redraw();
-            }
+        /* One sample: the remembered one if it still exists, else the first. */
+        var sampleId = String(prefs.get(sampleKey, ""));
+        if (!(sampleId in labelOf)) { sampleId = data.samples.length ? String(data.samples[0].id) : ""; }
+        function showSample() {
+            sampleName.textContent = labelOf[sampleId] || "";
+            Array.prototype.forEach.call(sampleMenu.querySelectorAll("li[data-value]"), function (row) {
+                row.classList.toggle("active", row.getAttribute("data-value") === sampleId);
+            });
+        }
+        sampleMenu.addEventListener("click", function (event) {
+            var row = event.target.closest("li[data-value]");
+            if (!row) { return; }
+            event.preventDefault();
+            sampleId = row.getAttribute("data-value");
+            prefs.set(sampleKey, sampleId);
+            showSample();
+            redraw();
         });
-        picker.select(function (row) { return !hidden[row.getAttribute("data-value")]; });
 
         var population = prefs.get(populationKey, null);
         if (population !== null && Array.prototype.some.call(populationSelect.options, function (o) { return o.value === population; })) {
@@ -165,8 +174,7 @@
         function state() {
             return {
                 mode: mode,
-                sampleIds: picker.selected(),
-                stack: stackBox.checked,
+                sampleId: sampleId,
                 population: populationSelect.value,
                 treatment: treatmentSelect ? treatmentSelect.value : "",
                 frequency: frequencyBox.checked,
@@ -175,13 +183,11 @@
         }
 
         function showMode() {
-            Array.prototype.forEach.call(root.querySelectorAll("[data-mode]"), function (button) {
-                button.classList.toggle("active", button.getAttribute("data-mode") === mode);
+            Array.prototype.forEach.call(root.querySelectorAll("[data-mode]"), function (tab) {
+                (tab.closest("li") || tab).classList.toggle("active", tab.getAttribute("data-mode") === mode);
             });
-            samplesView.hidden = mode !== "samples";
-            stackGroup.hidden = mode !== "samples";
-            populationGroup.hidden = mode !== "population";
-            if (treatmentGroup) { treatmentGroup.hidden = mode !== "population"; }
+            sampleView.hidden = mode !== "sample";
+            populationView.hidden = mode !== "population";
         }
 
         function summarize(ringList, s) {
@@ -203,12 +209,14 @@
                 if (untimed.length) {
                     words += "; " + untimed[0].sampleIds.length + " with no time point in the outer ring";
                 }
-                if (ringList.length > 12) { words += ". Many rings are thin: the Samples mode may read better"; }
+                if (ringList.length > 12) { words += ". Many rings are thin: one sample at a time may read better"; }
                 return words + ".";
             }
-            var n = s.sampleIds.length;
-            if (!n) { return "No samples chosen."; }
-            return n + " sample" + (n === 1 ? "" : "s") + (s.stack ? " as " + n + " ring" + (n === 1 ? "" : "s") : " on one ring") + ".";
+            if (!ringList.length) { return "No sample to draw."; }
+            var n = 0;
+            ringList.forEach(function (ring) { n += ring.sampleIds ? ring.sampleIds.length : 0; });
+            var marks = box.querySelectorAll(".circos-mark").length;
+            return (labelOf[s.sampleId] || "") + ": " + marks + " mark" + (marks === 1 ? "" : "s") + ".";
         }
 
         var current = null;
@@ -227,15 +235,15 @@
                 : "";
         }
 
-        Array.prototype.forEach.call(root.querySelectorAll("[data-mode]"), function (button) {
-            button.addEventListener("click", function () {
-                mode = button.getAttribute("data-mode");
+        Array.prototype.forEach.call(root.querySelectorAll("[data-mode]"), function (tab) {
+            tab.addEventListener("click", function (event) {
+                event.preventDefault();
+                mode = tab.getAttribute("data-mode");
                 prefs.set("circos.mode", mode);
                 showMode();
                 redraw();
             });
         });
-        stackBox.addEventListener("change", function () { prefs.set("circos.stack", stackBox.checked); redraw(); });
         frequencyBox.addEventListener("change", function () { prefs.set("circos.frequency", frequencyBox.checked); redraw(); });
         labelsBox.addEventListener("change", function () { prefs.set("circos.labels", labelsBox.checked); redraw(); });
         populationSelect.addEventListener("change", function () { prefs.set(populationKey, populationSelect.value); redraw(); });
@@ -248,7 +256,7 @@
             var s = state();
             var title = s.mode === "population"
                 ? s.population + (s.treatment ? " under " + s.treatment : "") + ", one ring per time point, innermost earliest"
-                : s.sampleIds.length + " samples" + (s.stack ? ", one ring each" : "");
+                : (labelOf[s.sampleId] || "");
             plot.download(plot.standalone(current, { colors: data.colors, title: title }),
                           fileStem + "_circos.svg", "image/svg+xml");
         });
@@ -258,6 +266,7 @@
             timer = setTimeout(redraw, 150);
         });
 
+        showSample();
         wireTooltip(box, tip, data);
         showMode();
         redraw();

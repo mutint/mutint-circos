@@ -57,7 +57,10 @@
         var total = 0;
         contigs.forEach(function (c) { total += c.length; });
         var between = n > 1 ? rad(GAP_DEG) : 0;
-        var origin = (options.rings || 1) > 1 ? rad(LABEL_GAP_DEG) : between;
+        // The origin is always a gap, a single contig's included: it marks position 1 of
+        // a circular genome, and a band from an angle back to the same angle is an arc SVG
+        // draws as nothing at all.
+        var origin = (options.rings || 1) > 1 ? rad(LABEL_GAP_DEG) : rad(GAP_DEG);
         var available = TAU - origin - between * Math.max(0, n - 1);
         var k = total > 0 ? available / total : 0;
         var theta = -Math.PI / 2 + origin / 2;
@@ -107,21 +110,29 @@
         return width;
     }
 
+    /* The A commands of an arc of radius r from t1 to t2, `sweep` 1 clockwise or 0 back.
+       An arc over more than a half turn is written as two, because an arc whose two ends
+       round to the same point -- a whole contig on its own -- is an arc SVG draws as nothing. */
+    function arcCommands(cx, cy, r, t1, t2, sweep) {
+        var pieces = (t2 - t1) > Math.PI ? [[t1, (t1 + t2) / 2], [(t1 + t2) / 2, t2]] : [[t1, t2]];
+        if (sweep === 0) { pieces = pieces.reverse().map(function (p) { return [p[1], p[0]]; }); }
+        return pieces.map(function (p) {
+            var end = polar(cx, cy, r, p[1]);
+            return " A" + fmt(r) + " " + fmt(r) + " 0 0 " + sweep + " " + fmt(end[0]) + " " + fmt(end[1]);
+        }).join("");
+    }
+
     /* An arc of radius r from t1 to t2 clockwise. */
     function arcPath(cx, cy, r, t1, t2) {
-        var a = polar(cx, cy, r, t1), b = polar(cx, cy, r, t2);
-        var large = (t2 - t1) > Math.PI ? 1 : 0;
-        return "M" + fmt(a[0]) + " " + fmt(a[1]) + " A" + fmt(r) + " " + fmt(r) + " 0 " + large
-            + " 1 " + fmt(b[0]) + " " + fmt(b[1]);
+        var a = polar(cx, cy, r, t1);
+        return "M" + fmt(a[0]) + " " + fmt(a[1]) + arcCommands(cx, cy, r, t1, t2, 1);
     }
 
     /* A closed band between two radii from t1 to t2. */
     function annulusPath(cx, cy, r1, r2, t1, t2) {
-        var a = polar(cx, cy, r2, t1), b = polar(cx, cy, r2, t2);
-        var c = polar(cx, cy, r1, t2), d = polar(cx, cy, r1, t1);
-        var large = (t2 - t1) > Math.PI ? 1 : 0;
-        return "M" + fmt(a[0]) + " " + fmt(a[1]) + " A" + fmt(r2) + " " + fmt(r2) + " 0 " + large + " 1 " + fmt(b[0]) + " " + fmt(b[1])
-            + " L" + fmt(c[0]) + " " + fmt(c[1]) + " A" + fmt(r1) + " " + fmt(r1) + " 0 " + large + " 0 " + fmt(d[0]) + " " + fmt(d[1]) + " Z";
+        var a = polar(cx, cy, r2, t1), c = polar(cx, cy, r1, t2);
+        return "M" + fmt(a[0]) + " " + fmt(a[1]) + arcCommands(cx, cy, r2, t1, t2, 1)
+            + " L" + fmt(c[0]) + " " + fmt(c[1]) + arcCommands(cx, cy, r1, t1, t2, 0) + " Z";
     }
 
     function fmt(x) { return Math.round(x * 100) / 100; }
@@ -142,8 +153,9 @@
         return trim(v) + " bp";
     }
 
-    /* What the rings are. `state.mode` is "samples" (`state.sampleIds`, every chosen sample
-       on one ring, or one ring each with `state.stack`), "population" (`state.population`,
+    /* What the rings are. `state.mode` is "sample" (`state.sampleId`, one sample on one
+       ring), "samples" (`state.sampleIds`, every chosen sample on one ring, or one ring each
+       with `state.stack`), "population" (`state.population`,
        narrowed by `state.treatment`, one ring per time point ascending, the untimed last),
        or "all" (one ring of every sample, the panel's). Each ring is
        {key, label, sampleIds, mixed}; `sampleIds` null means every mutation in the data. */
@@ -155,6 +167,10 @@
         }
         if (state.mode === "all") {
             return [{ key: "all", label: null, sampleIds: null, mixed: false }];
+        }
+        if (state.mode === "sample") {
+            var one = byId[String(state.sampleId)];
+            return one ? [{ key: "s" + one.id, label: null, sampleIds: [one.id], mixed: mixed([one.id]) }] : [];
         }
         if (state.mode === "population") {
             var chosen = data.samples.filter(function (s) {
@@ -335,8 +351,12 @@
         var r0 = g.r0(i), r1 = r0 + g.ringWidth - 2;
         var mid = (r0 + r1) / 2;
         var group = el("g", { "class": "circos-ring", "data-ring": i });
-        group.appendChild(el("circle", { cx: g.cx, cy: g.cy, r: fmt(mid), fill: "none",
-                                         stroke: "#eee", "stroke-width": fmt(r1 - r0) }));
+        // The ring's background spans the genome and nothing else: over the gap between
+        // contigs and at the origin there is no reference to be mutated, so there is no ring.
+        lay.contigs.forEach(function (c) {
+            group.appendChild(el("path", { d: annulusPath(g.cx, g.cy, r0, r1, c.theta0, c.theta1),
+                                           fill: "#eee", stroke: "none" }));
+        });
         var marks = marksFor(data, ring, lay, r1, index);
         var stroke = r1 - r0;
         marks.spans.forEach(function (span) {
@@ -391,6 +411,7 @@
        mutations on contigs the reference lacks) and each mark's mutation ids. */
     function draw(data, state, width) {
         var ringList = rings(data, state);
+        if (!ringList.length) { ringList = [{ key: "none", label: null, sampleIds: [], mixed: false }]; }
         var lay = layout(data.contigs, { rings: ringList.length });
         var g = geometry(width, ringList.length);
         var svg = el("svg", { xmlns: NS, width: width, height: width, viewBox: "0 0 " + width + " " + width,

@@ -45,8 +45,6 @@ def circos(request):
         "file_stem": "%s_%s" % (safe_filename(experiment.project.name),
                                 safe_filename(experiment.name)),
         "data": data,
-        # Every row starts highlighted; the script turns off the ones the reader hid.
-        "sample_ids": [entry["id"] for entry in data["samples"]],
         "legend": [(key, COLORS[key]) for key in COLORS],
         "arc_threshold_kb": ARC_THRESHOLD // 1000,
         "authenticated": authenticated,
