@@ -156,8 +156,10 @@ because the circle has a ceiling and the question "show me these forty clones" d
 - **Order is treatment, population, time point, then the payload's own order.** Treatment
   compares under `naturalKey` -- digits padded, the rule `ordering.sample_order` uses -- so
   `2 mM` precedes `10 mM`; an empty treatment sorts first; population takes the payload's
-  order, which is core's natural order; untimed samples go last within a block, as the
-  untimed ring is outermost. The server sorts nothing for it.
+  order, which is core's natural order; within a block **the latest time point is on top**
+  and the earliest at the bottom, with untimed samples first, as the untimed ring is
+  outermost -- so a block reads as the rings do, from the ancestor's end outward. The server
+  sorts nothing for it.
 - **Shade is a rank on one scale.** Every distinct time point drawn, across every population,
   is ranked ascending, untimed last, and a track takes `ringGrey(rank, ranks)`. So time
   point 500 is one grey in every block, which is what makes two populations' blocks
@@ -170,10 +172,13 @@ because the circle has a ceiling and the question "show me these forty clones" d
 - **Blocks are headed only when some block holds more than one track.** Thirty clones from
   thirty populations are thirty labels already; a heading over each said every name twice
   and doubled the height. One block has no heading either.
-- **Height follows the tracks.** 22 px a track to 24 tracks, then shrinking to a floor of 8;
-  the label column is measured from the labels and clamped 60 to 180 px, a label that does
-  not fit trimmed with an ellipsis and carried whole in a `<title>`. The width is the box's,
-  480 to 1400 px. A hundred tracks is a tall SVG, which is the right answer.
+- **Height follows the tracks.** 28 px a track to 24 tracks, then shrinking to a floor of
+  12. The sample labels are at the **right**, past the axis's end, in a column measured
+  from the widest label and never narrower than 60 px -- a label is never trimmed, so a long
+  name costs axis width rather than legibility. The width is the box's, 800 to 1400 px, and
+  **a box narrower than 800 px scrolls the plot** (`.circos-plot` is `overflow-x: auto` and
+  the linear SVG opts out of `max-width: 100%`) rather than shrinking it; the tooltip adds
+  the box's `scrollLeft` for it. A hundred tracks is a tall SVG, which is the right answer.
 - **The picker is Compare's Samples menu**: `li.active` is drawn, `mutintSelectList` in
   toggle mode, Show all / Hide all set the whole selection, and the Population and Treatment
   menus **set the selection to a subset** -- every sample matching both -- rather than

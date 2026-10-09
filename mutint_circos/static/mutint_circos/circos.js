@@ -93,9 +93,12 @@
         data.samples.forEach(function (s) { index.samples[String(s.id)] = s; });
         var current = null;
         function place(event) {
+            // The box scrolls a linear plot wider than itself, so the pointer's x is offset
+            // by what is scrolled out of view.
             var rect = box.getBoundingClientRect();
-            var x = event.clientX - rect.left + 14, y = event.clientY - rect.top + 14;
-            tip.style.left = Math.min(x, Math.max(0, rect.width - tip.offsetWidth - 4)) + "px";
+            var scrolled = box.scrollLeft || 0;
+            var x = event.clientX - rect.left + scrolled + 14, y = event.clientY - rect.top + 14;
+            tip.style.left = Math.min(x, Math.max(0, scrolled + rect.width - tip.offsetWidth - 4)) + "px";
             tip.style.top = y + "px";
         }
         box.addEventListener("mouseover", function (event) {

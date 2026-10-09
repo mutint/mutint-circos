@@ -66,7 +66,7 @@ class PayloadTestCase(fx.CircosFixture):
         by_key = {(m["type"], m["start"]): m["glyph"] for m in data["mutations"]}
         self.assertTrue(set(by_key.values()) <= names, by_key)
         self.assertEqual("triangle", by_key[("DEL", 200)])
-        self.assertEqual("trapezoid-down", by_key[("DEL", 1000)])
+        self.assertEqual("trapezoid", by_key[("DEL", 1000)])
         self.assertEqual("bowtie", by_key[("MOB", 400)])
         self.assertEqual("triangle-down", by_key[("AMP", 300)])
         self.assertEqual("triangle-down", by_key[("SUB", 500)], "a SUB that lengthens draws as an insertion")

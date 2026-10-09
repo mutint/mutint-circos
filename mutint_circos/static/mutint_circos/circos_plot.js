@@ -22,11 +22,13 @@
  *
  * The same marks can be drawn **linear**: `state.mode === "linear"` lays the contigs end to
  * end along a horizontal axis and stacks one track per chosen sample under it, ordered by
- * treatment, population and time point (`tracks`). A track is shaded by its time point's
- * rank among every time point drawn, so one time point is one grey in every population's
- * block; within a population's block the tracks at its latest time point play the outermost
+ * treatment, population and time point (`tracks`), the latest time point of each block on
+ * top and the sample's name whole at the right. A track is shaded by its time point's rank
+ * among every time point drawn, so one time point is one grey in every population's block;
+ * within a population's block the tracks at its latest time point play the outermost
  * ring's part for the glyph rule. Any number of samples fits, which is what the circle
- * cannot offer.
+ * cannot offer, and the plot never draws narrower than LINEAR_MIN_WIDTH: a narrower box
+ * scrolls it.
  *
  * The geometry (`layout`, `angle`, `geometry`, `arcPath`, `tickStep`, `rings`, `ringGrey`,
  * `glyphed`, `glyphTransform`, `tracks`, `outerIdsByGroup`, `linearLayout`, `xOf`,
@@ -59,15 +61,17 @@
     var HOLE = 0.28;            // the centre hole, as a fraction of R
     var MIN_WIDTH = 480, MAX_WIDTH = 900, WIDE_WIDTH = 1100, WIDE_AFTER = 12;
     /* The linear layout: contigs along one axis, one track per sample under it. */
-    var LINEAR_MIN_WIDTH = 480, LINEAR_MAX_WIDTH = 1400;
+    var LINEAR_MIN_WIDTH = 800, LINEAR_MAX_WIDTH = 1400;  // narrower than the floor scrolls, never shrinks
     var LINEAR_GAP_PX = 8;      // between contigs
-    var LINEAR_RIGHT = 16;      // past the last contig
+    var LINEAR_LEFT = 16;       // before the first contig
+    var LINEAR_RIGHT = 16;      // past the last contig, or past the label column
     var LINEAR_TOP = 48;        // tick labels, contig names and the band
     var LINEAR_BOTTOM = 10;
-    var TRACK_MIN = 8, TRACK_MAX = 22;   // a track's height
+    var TRACK_MIN = 12, TRACK_MAX = 28;  // a track's height
     var GROUP_GAP = 10;         // between populations, under their heading
     var GROUP_HEADING = 14;     // the heading's own line
-    var LABEL_MIN = 60, LABEL_MAX = 180; // the sample-label column
+    var LABEL_GAP = 8;          // between the axis's end and a track's label
+    var LABEL_MIN = 60;         // the sample-label column, at the right, is never narrower
     var TICK_STEPS = [1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6, 2e6, 5e6, 1e7];
     var MAX_TICKS = 24;
     var FONT = 11;
@@ -366,7 +370,8 @@
 
     /* The tracks of the linear layout: one per sample in `state.sampleIds`, ordered by
        treatment (an empty one first), then population in the payload's order, then time
-       point with the untimed last, then the payload's own order. Each is a ring in the sense
+       point latest first with the untimed before any (the latest is on top, as the outermost
+       ring is outermost), then the payload's own order. Each is a ring in the sense
        `rings` means -- {key, label, sampleIds, mixed} -- and carries besides it `time`,
        `time_label`, `treatment`, `population`, `group` (treatment and population together),
        `shade` (the time point's rank among every time point drawn, untimed last, so one time
@@ -382,10 +387,12 @@
         data.samples.forEach(function (s, i) {
             if (!wanted[String(s.id)]) { return; }
             var untimed = s.time_point === null || s.time_point === undefined;
+            // Within a block the latest time point is on top, as the outermost ring is
+            // outermost: time descends, with untimed (the latest where it occurs) first.
             chosen.push({ sample: s, index: i, untimed: untimed,
                           key: [naturalKey(s.treatment || ""),
                                 populationIndex[s.population] === undefined ? Infinity : populationIndex[s.population],
-                                untimed ? Infinity : s.time_point, i] });
+                                untimed ? -Infinity : -s.time_point, i] });
         });
         chosen.sort(function (a, b) {
             for (var i = 0; i < 4; i++) {
@@ -441,13 +448,15 @@
         return trackList.map(function (track) { return track.outer ? null : (union[track.group] || {}); });
     }
 
-    /* Where each contig sits along the axis: end to end from x = left, a gap between them,
-       `k` pixels per base. */
-    function linearLayout(contigs, plotWidth, left) {
+    /* Where each contig sits along the axis: end to end from x = left to `right` (the
+       plot's width less the right margin when not given), a gap between them, `k` pixels
+       per base. */
+    function linearLayout(contigs, plotWidth, left, right) {
         var n = contigs.length;
         var total = 0;
         contigs.forEach(function (c) { total += c.length; });
-        var available = plotWidth - left - LINEAR_RIGHT - LINEAR_GAP_PX * Math.max(0, n - 1);
+        if (right === undefined) { right = plotWidth - LINEAR_RIGHT; }
+        var available = right - left - LINEAR_GAP_PX * Math.max(0, n - 1);
         var k = total > 0 ? Math.max(0, available) / total : 0;
         var x = left;
         var placed = [], byId = {};
@@ -457,7 +466,7 @@
             byId[c.id] = entry;
             x = entry.x1 + LINEAR_GAP_PX;
         });
-        return { k: k, total: total, contigs: placed, byId: byId, left: left, right: plotWidth - LINEAR_RIGHT };
+        return { k: k, total: total, contigs: placed, byId: byId, left: left, right: right };
     }
 
     /* The x of a 1-based position on a contig; null for a contig the reference lacks. */
@@ -471,13 +480,17 @@
        gap before each group after the first. `trackY(i)` is the centre line of track i.
        Groups are headed only when some group holds more than one track: thirty clones from
        thirty populations are thirty labels already, and a heading over each would say every
-       name twice and double the height. */
+       name twice and double the height. The label column is at the right, as wide as the
+       widest label asks (`labelWidth`), never narrower than LABEL_MIN and never trimmed:
+       `right` is where the axis ends and the labels begin. */
     function linearGeometry(width, trackList, labelWidth) {
         var n = trackList.length;
-        var left = Math.max(LABEL_MIN, Math.min(LABEL_MAX, labelWidth || LABEL_MIN));
+        var left = LINEAR_LEFT;
+        var column = Math.max(LABEL_MIN, labelWidth || 0);
+        var right = width - LINEAR_RIGHT - column;
         var groups = trackList.groups || 0;
         var trackHeight = TRACK_MAX;
-        if (n > 24) { trackHeight = Math.max(TRACK_MIN, Math.round(TRACK_MAX - (n - 24) / 4)); }
+        if (n > 24) { trackHeight = Math.max(TRACK_MIN, Math.round(TRACK_MAX - (n - 24) / 3)); }
         var headed = groups > 1 && groups < n;
         var ys = [], y = LINEAR_TOP, lastGroup = null;
         trackList.forEach(function (track) {
@@ -489,7 +502,8 @@
             y += trackHeight;
         });
         return {
-            width: width, left: left, top: LINEAR_TOP, trackHeight: trackHeight, headed: headed,
+            width: width, left: left, right: right, labelX: right + LABEL_GAP, top: LINEAR_TOP,
+            trackHeight: trackHeight, headed: headed,
             height: y + LINEAR_BOTTOM,
             trackY: function (i) { return ys[i]; }
         };
@@ -694,14 +708,6 @@
         svg.appendChild(labels);
     }
 
-    /* A label that fits `maxWidth` at `size`, trimmed with an ellipsis where it does not. */
-    function fitLabel(text, size, maxWidth) {
-        if (textWidth(text, size) <= maxWidth) { return text; }
-        var cut = text;
-        while (cut.length > 1 && textWidth(cut + "…", size) > maxWidth) { cut = cut.slice(0, -1); }
-        return cut + "…";
-    }
-
     /* The genome as an axis: a band per contig under LINEAR_TOP with ticks and labels above
        it, the contig's name above those where there are several, or name and length at the
        left where there is one. */
@@ -749,8 +755,8 @@
     }
 
     /* One track: a grey line per contig in the shade of its time point, the sample's label
-       at the left, a dash per point, a thick line per span, and the glyph above whichever
-       marks `glyphed` says against `outerIds`. */
+       whole at the right, a dash per point, a thick line per span, and the glyph above
+       whichever marks `glyphed` says against `outerIds`. */
     function drawTrack(svg, data, track, i, lay, g, index, options) {
         var y = g.trackY(i);
         var d = Math.min(DASH_MAX, Math.max(4, g.trackHeight - DASH_GAP));
@@ -762,10 +768,9 @@
                                            stroke: ringGrey(track.shade, options.shades), "stroke-width": RING_LINE,
                                            "class": "circos-ring-line" }));
         });
-        var fontSize = Math.min(FONT - 1, Math.max(7, g.trackHeight - 3));
-        var label = el("text", { x: fmt(g.left - 6), y: fmt(y), "font-size": fontSize, "text-anchor": "end",
-                                 "dominant-baseline": "middle", fill: "#333" },
-                       fitLabel(track.label, fontSize, g.left - 10));
+        var fontSize = Math.min(FONT - 1, Math.max(8, g.trackHeight - 3));
+        var label = el("text", { x: fmt(g.labelX), y: fmt(y), "font-size": fontSize, "text-anchor": "start",
+                                 "dominant-baseline": "middle", fill: "#333" }, track.label);
         label.appendChild(el("title", {}, track.label + (track.time_label ? ", " + track.time_label : "")));
         group.appendChild(label);
         var marks = linearMarksFor(data, track, lay, index);
@@ -813,7 +818,7 @@
             if (track.group === lastGroup) { return; }
             lastGroup = track.group;
             var words = (track.treatment ? track.treatment + " · " : "") + track.population;
-            headings.appendChild(el("text", { x: 4, y: fmt(g.trackY(i) - g.trackHeight / 2 - 4), "font-size": FONT,
+            headings.appendChild(el("text", { x: fmt(g.left), y: fmt(g.trackY(i) - g.trackHeight / 2 - 4), "font-size": FONT,
                                                "font-weight": "bold", fill: "#222" }, words));
         });
         svg.appendChild(headings);
@@ -823,9 +828,10 @@
     function drawLinear(data, state, width) {
         var trackList = tracks(data, state);
         var labelWidth = 0;
-        trackList.forEach(function (track) { labelWidth = Math.max(labelWidth, textWidth(track.label, FONT - 1) + 12); });
+        // Measured at the largest size a track label is drawn at, with room to spare.
+        trackList.forEach(function (track) { labelWidth = Math.max(labelWidth, textWidth(track.label, FONT - 1) * 1.05 + LABEL_GAP + 6); });
         var g = linearGeometry(width, trackList, labelWidth);
-        var lay = linearLayout(data.contigs, width, g.left);
+        var lay = linearLayout(data.contigs, width, g.left, g.right);
         var svg = el("svg", { xmlns: NS, width: width, height: fmt(g.height), viewBox: "0 0 " + width + " " + fmt(g.height),
                               "font-family": FONT_FAMILY, "data-circos": "1", "data-layout": "linear",
                               "data-rings": trackList.length });
@@ -922,7 +928,7 @@
         y += LINE;
         if (Number(svg.getAttribute("data-rings")) > 1) {
             var sentence = svg.getAttribute("data-layout") === "linear"
-                ? "Tracks are samples, ordered by treatment, population and time point, shaded lighter earlier. A symbol on a track before its population's latest time point marks a mutation no sample at that time point carries."
+                ? "Tracks are samples, ordered by treatment, population and time point, the latest time point of each population on top, shaded lighter earlier. A symbol on a track before its population's latest time point marks a mutation no sample at that time point carries."
                 : "Rings are time points, innermost earliest. A symbol inside the outermost ring marks a mutation no sample on that ring carries.";
             legend.appendChild(el("text", { x: 0, y: y + SW, "font-size": FONT, fill: "#555" }, sentence));
             y += LINE;

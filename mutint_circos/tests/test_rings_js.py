@@ -46,10 +46,12 @@ process.stdin.on("end", () => {
     const lin = api.linearLayout(contigs, 1000, 100);
     out.xs = job.positions.map(p => api.xOf(lin, p[0], p[1]));
     out.right = lin.right;
+    out.rightGiven = api.linearLayout(contigs, 1000, 16, 700).right;
     const geo = api.linearGeometry(1000, tracks, 80);
-    out.geometry2 = [geo.trackHeight, geo.left, geo.height, geo.headed, tracks.map((t, i) => geo.trackY(i))];
+    out.geometry2 = [geo.trackHeight, geo.left, geo.right, geo.labelX, geo.height, geo.headed, tracks.map((t, i) => geo.trackY(i))];
     const tall = api.linearGeometry(1000, Object.assign(Array.from({length: 80}, (_, i) => ({group: "g"})), {groups: 1}), 500);
-    out.tall = [tall.trackHeight, tall.left, tall.headed];
+    out.tall = [tall.trackHeight, tall.right, tall.headed];
+    out.narrowLabels = api.linearGeometry(1000, tracks, 20).right;
     const singletons = api.linearGeometry(1000, Object.assign(Array.from({length: 5}, (_, i) => ({group: "g" + i})), {groups: 5}), 80);
     out.singletons = singletons.headed;
     out.natural = [api.naturalKey("2 mM") < api.naturalKey("10 mM"), api.naturalKey("b") > api.naturalKey("a10")];
@@ -161,15 +163,16 @@ class GeometryTestCase(unittest.TestCase):
 
     def test_tracks_are_ordered_by_treatment_population_and_time(self):
         out = run(self.job())
+        # Within a block the latest time point is on top (first), the earliest at the bottom.
         self.assertEqual([
-            ["A-0", 0, False, "", "A"],            # no treatment first, A before B
-            ["A-500", 1, False, "", "A"],          # 500 is A's latest timed point, but...
-            ["A-untimed", 3, True, "", "A"],       # ...untimed counts as latest where it occurs
+            ["A-untimed", 3, True, "", "A"],       # no treatment first, A before B; untimed counts
+            ["A-500", 1, False, "", "A"],          #   as latest where it occurs, so it leads A...
+            ["A-0", 0, False, "", "A"],            #   ...and 500 is not outer
             ["B-0", 0, True, "", "B"],             # alone in its group, so outer
             ["D-1000", 2, True, "2 mM", "D"],      # 2 mM before 10 mM, by value
             ["D-1000b", 2, True, "2 mM", "D"],     # every sample at the latest time point is outer
-            ["C-500", 1, False, "10 mM", "C"],
             ["C-1000", 2, True, "10 mM", "C"],
+            ["C-500", 1, False, "10 mM", "C"],
             ["A-500-x", 1, True, "x", "A"],
         ], [t[:2] + [t[2]] + t[3:] for t in out["tracks"]])
         self.assertEqual(4, out["shades"], "0, 500, 1000 and untimed")
@@ -205,18 +208,22 @@ class GeometryTestCase(unittest.TestCase):
         self.assertAlmostEqual(out["right"], xs[3] + (xs[2] - xs[0]) / 3999999 * 99999, places=3,
                                msg="the last base of the last contig ends at the right margin")
         self.assertIsNone(xs[4], "a contig the reference lacks has no x")
+        self.assertEqual(700, out["rightGiven"], "the axis ends where the label column begins")
 
     def test_tracks_shrink_with_number_and_groups_take_a_heading(self):
         out = run(self.job())
-        height, left, total, headed, ys = out["geometry2"]
-        self.assertEqual(22, height)
-        self.assertEqual(80, left)
+        height, left, right, label_x, total, headed, ys = out["geometry2"]
+        self.assertEqual(28, height)
+        self.assertEqual(16, left, "the axis starts at the left margin")
+        self.assertEqual(1000 - 16 - 80, right, "the label column is at the right, as wide as asked")
+        self.assertGreater(label_x, right, "labels start past the axis's end")
         self.assertTrue(headed, "five groups are headed")
         self.assertEqual(sorted(ys), ys)
         self.assertGreater(ys[3] - ys[2], ys[1] - ys[0], "a new group opens after a heading and a gap")
         self.assertGreater(total, ys[-1])
-        tall_height, tall_left, tall_headed = out["tall"]
-        self.assertEqual(8, tall_height, "eighty tracks sit at the floor")
-        self.assertEqual(180, tall_left, "the label column is capped")
+        tall_height, tall_right, tall_headed = out["tall"]
+        self.assertEqual(12, tall_height, "eighty tracks sit at the floor")
+        self.assertEqual(1000 - 16 - 500, tall_right, "a wide label column is never trimmed")
+        self.assertEqual(1000 - 16 - 60, out["narrowLabels"], "short labels still get the minimum column")
         self.assertFalse(tall_headed, "one group has no heading")
         self.assertFalse(out["singletons"], "a heading per one-track group would name every sample twice")

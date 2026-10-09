@@ -22,8 +22,11 @@
     border: 1px solid #999; margin-right: 2px;
 }
 
-.circos-plot { position: relative; max-width: 100%; }
+.circos-plot { position: relative; max-width: 100%; overflow-x: auto; }
 .circos-plot svg { display: block; max-width: 100%; height: auto; }
+/* A linear plot has a floor on its width (circos_plot.js LINEAR_MIN_WIDTH) and scrolls in a
+   box narrower than that rather than shrinking its tracks and labels. */
+.circos-plot svg[data-layout="linear"] { max-width: none; }
 .circos-mark { cursor: pointer; }
 .circos-tip {
     position: absolute; z-index: 20; pointer-events: none; max-width: 320px;

@@ -46,10 +46,13 @@ points are drawn as rings, the earliest first; when a population has more, the l
 controls says how many were left off and points at the linear tab, which has no such limit.
 
 **Multiple Samples (Linear)** draws any number of samples as horizontal tracks stacked under
-the genome, one per sample. Tracks are ordered by treatment, then population, then time
-point, with a heading over each population's block where a block holds more than one track,
-and each track is shaded by its time point -- lightest earliest -- on one scale for the whole
-plot, so the same time point is the same grey in every population. Within a population's
+the genome, one per sample, with the sample's name at the right of its track. Tracks are
+ordered by treatment, then population, then time point -- the latest time point of each
+population on top and the earliest at the bottom -- with a heading over each population's
+block where a block holds more than one track, and each track is shaded by its time point --
+lightest earliest -- on one scale for the whole plot, so the same time point is the same grey
+in every population. The plot keeps a minimum width: in a narrow window it scrolls sideways
+rather than shrinking. Within a population's
 block the track at its latest time point wears every symbol, and an earlier track's mark is
 capped only when no sample at that latest time point carries it, the same rule the rings use.
 The **Samples** menu ticks which samples are drawn, **Show all** and **Hide all** set the
