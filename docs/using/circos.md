@@ -32,16 +32,30 @@ closer together than the plot can separate become one mark that says how many it
 
 ## Choosing what to draw
 
-**Sample** draws one sample on one ring, chosen from the same menu the Mutations page uses.
+**One Sample (Circular)** draws one sample on one ring, chosen from the same menu the
+Mutations page uses.
 
-**Population** takes one population (and a treatment, where the experiment records
-any) and draws one ring per time point, innermost earliest, so a lineage's mutations can be
-followed outward through time. Rings are shaded light to dark from earliest to latest. A
-mutation on an inner ring that no sample on the outermost ring carries is capped with its
+**Multiple Samples (Circular)** takes one population (and a treatment, where the experiment
+records any) and draws one ring per time point, innermost earliest, so a lineage's mutations
+can be followed outward through time. Rings are shaded light to dark from earliest to latest.
+A mutation on an inner ring that no sample on the outermost ring carries is capped with its
 symbol: it was there, and is not in the latest clones. Samples at the same time point share a
-ring. Samples with no
-time point are drawn on an outermost ring labelled *untimed*; the line under the controls
-says how many rings there are and where everything went.
+ring. Samples with no time point are drawn on an outermost ring labelled *untimed*; the line
+under the controls says how many rings there are and where everything went. At most 30 time
+points are drawn as rings, the earliest first; when a population has more, the line under the
+controls says how many were left off and points at the linear tab, which has no such limit.
+
+**Multiple Samples (Linear)** draws any number of samples as horizontal tracks stacked under
+the genome, one per sample. Tracks are ordered by treatment, then population, then time
+point, with a heading over each population's block where a block holds more than one track,
+and each track is shaded by its time point -- lightest earliest -- on one scale for the whole
+plot, so the same time point is the same grey in every population. Within a population's
+block the track at its latest time point wears every symbol, and an earlier track's mark is
+capped only when no sample at that latest time point carries it, the same rule the rings use.
+The **Samples** menu ticks which samples are drawn, **Show all** and **Hide all** set the
+whole selection, and the **Population** and **Treatment** menus select every sample of one
+population or one treatment at once; single rows can then be toggled. Which samples are
+hidden is remembered per experiment.
 
 **Frequency as opacity** draws a mutation found at less than 100% in a mixed-population
 sample paler, in proportion to its frequency; a clonal sample's marks are always solid. It

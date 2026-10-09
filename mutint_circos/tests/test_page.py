@@ -25,8 +25,10 @@ class PageTestCase(fx.CircosFixture):
         self.assertEqual(200, response.status_code)
         html = response.content.decode()
         self.assertIn('class="mutint-experiment-name">E</span></b> <span class="mutint-header-sep">&raquo;</span> Circos', html)
-        self.assertIn('data-mode="sample">Sample</a>', html)
-        self.assertIn('data-mode="population">Population</a>', html)
+        self.assertIn('data-mode="sample">One Sample (Circular)</a>', html)
+        self.assertIn('data-mode="population">Multiple Samples (Circular)</a>', html)
+        self.assertIn('data-mode="linear">Multiple Samples (Linear)</a>', html)
+        self.assertIn("innermost earliest, up to 30", html)
         self.assertIn('data-export="svg"', html)
         self.assertNotIn("view filter", html)
         self.assertIn("longer than 5 kb", html)
@@ -41,6 +43,19 @@ class PageTestCase(fx.CircosFixture):
             self.assertIn('<li data-value="%d"><a href="#">%s</a></li>' % (entry["id"], entry["label"]), html)
         self.assertIn('<option value="1">1</option>', html)
         self.assertNotIn('data-role="treatment"', html)
+
+    def test_the_linear_pane_lists_every_sample_and_the_subset_menus(self):
+        html = self.get().content.decode()
+        data = payload(html)
+        self.assertIn('data-role="linear-samples"', html)
+        for entry in data["samples"]:
+            self.assertIn('<li data-value="%d" class="active"><a href="#">%s</a></li>' % (entry["id"], entry["label"]), html)
+        self.assertIn('data-role="linear-count">4</span>', html)
+        self.assertIn('data-samples="all"', html)
+        self.assertIn('data-samples="none"', html)
+        self.assertIn('data-role="linear-population"', html)
+        self.assertIn('<option value="all">all</option>', html)
+        self.assertNotIn('data-role="linear-treatment"', html, "no sample carries a treatment")
 
     def test_the_scripts_and_the_style_are_in_the_rendered_page(self):
         html = self.get().content.decode()
@@ -60,6 +75,7 @@ class PageTestCase(fx.CircosFixture):
         html = self.get().content.decode()
         self.assertIn("there is no circle to draw", html)
         self.assertNotIn('data-mode="population"', html)
+        self.assertNotIn('data-mode="linear"', html)
 
     def test_without_an_experiment_the_page_says_so(self):
         response = self.client.get("/circos/")

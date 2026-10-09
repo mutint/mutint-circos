@@ -2,13 +2,18 @@
  *
  * The payload arrives whole as JSON (`#circos-data`); this script reads the controls into a
  * state, hands it to circos_plot.js, and redraws on every change -- no request is made after
- * the page loads. Five choices are remembered through mutintPreferences: `circos.mode`,
+ * the page loads. The choices are remembered through mutintPreferences: `circos.mode`,
  * `circos.frequency`, `circos.labels`, and per experiment `circos.sample.<experiment>`,
- * `circos.population.<experiment>` and `circos.treatment.<experiment>`.
+ * `circos.population.<experiment>`, `circos.treatment.<experiment>` and
+ * `circos.linear.hidden.<experiment>` (the samples the linear tab leaves out, so one added
+ * later is drawn by default).
  *
- * The Sample tab's menu is the Mutations page's sample picker: a dropdown whose button
- * carries the chosen sample's name and whose chosen row is the one marked `active` -- one
- * sample at a time, chosen here without a request.
+ * Three tabs. One Sample (Circular)'s menu is the Mutations page's sample picker: a dropdown
+ * whose button carries the chosen sample's name and whose chosen row is the one marked
+ * `active` -- one sample at a time. Multiple Samples (Circular) is one population as one
+ * ring per time point. Multiple Samples (Linear)'s menu is Compare's Samples menu: every
+ * row `active` is drawn, driven by mutintSelectList in toggle mode, with Show all / Hide
+ * all and a population and a treatment menu that each set the selection to a subset.
  *
  * The tooltip is one box the whole plot shares, filled from the mark under the pointer:
  * what the mutation is, where, which samples carry it and at what frequency.
@@ -129,17 +134,63 @@
         var populationView = root.querySelector("[data-role='population-view']");
         var populationSelect = root.querySelector("[data-role='population']");
         var treatmentSelect = root.querySelector("[data-role='treatment']");
+        var linearView = root.querySelector("[data-role='linear-view']");
+        var linearList = root.querySelector("[data-role='linear-samples']");
+        var linearCount = root.querySelector("[data-role='linear-count']");
+        var linearPopulation = root.querySelector("[data-role='linear-population']");
+        var linearTreatment = root.querySelector("[data-role='linear-treatment']");
         var frequencyBox = root.querySelector("[data-role='frequency']");
         var labelsBox = root.querySelector("[data-role='labels']");
         var sampleKey = "circos.sample." + experimentId;
         var populationKey = "circos.population." + experimentId;
         var treatmentKey = "circos.treatment." + experimentId;
-        var labelOf = {};
-        data.samples.forEach(function (sample) { labelOf[String(sample.id)] = sample.label; });
+        var hiddenKey = "circos.linear.hidden." + experimentId;
+        var labelOf = {}, sampleOf = {};
+        data.samples.forEach(function (sample) { labelOf[String(sample.id)] = sample.label; sampleOf[String(sample.id)] = sample; });
 
-        var mode = prefs.get("circos.mode", "sample") === "population" ? "population" : "sample";
+        var MODES = ["sample", "population", "linear"];
+        var mode = prefs.get("circos.mode", "sample");
+        if (MODES.indexOf(mode) < 0) { mode = "sample"; }
         frequencyBox.checked = prefs.get("circos.frequency", true) !== false;
         labelsBox.checked = prefs.get("circos.labels", true) !== false;
+
+        /* The linear tab's samples: every row is drawn unless it was hidden. */
+        var hidden = {};
+        (prefs.get(hiddenKey, []) || []).forEach(function (id) { hidden[String(id)] = true; });
+        var picker = window.mutintSelectList(linearList, {
+            toggle: true, controls: null,
+            onChange: function () { rememberHidden(); showCount(); redraw(); }
+        });
+        picker.select(function (row) { return !hidden[row.getAttribute("data-value")]; });
+        function rememberHidden() {
+            var out = [];
+            picker.rows().forEach(function (row) {
+                if (!picker.isSelected(row)) { out.push(Number(row.getAttribute("data-value"))); }
+            });
+            prefs.set(hiddenKey, out);
+        }
+        function showCount() {
+            if (linearCount) { linearCount.textContent = picker.count(); }
+        }
+        Array.prototype.forEach.call(root.querySelectorAll("[data-samples]"), function (button) {
+            button.addEventListener("click", function () {
+                var all = button.getAttribute("data-samples") === "all";
+                picker.select(function () { return all; });
+            });
+        });
+        /* The population and treatment menus set the selection to the samples matching
+           both, "all" and "any" meaning no narrowing on that axis. */
+        function selectSubset() {
+            var population = linearPopulation ? linearPopulation.value : "all";
+            var treatment = linearTreatment ? linearTreatment.value : "";
+            picker.select(function (row) {
+                var s = sampleOf[row.getAttribute("data-value")];
+                return !!s && (population === "all" || s.population === population)
+                    && (treatment === "" || (s.treatment || "") === treatment);
+            });
+        }
+        if (linearPopulation) { linearPopulation.addEventListener("change", selectSubset); }
+        if (linearTreatment) { linearTreatment.addEventListener("change", selectSubset); }
 
         /* One sample: the remembered one if it still exists, else the first. */
         var sampleId = String(prefs.get(sampleKey, ""));
@@ -175,6 +226,7 @@
             return {
                 mode: mode,
                 sampleId: sampleId,
+                sampleIds: picker.selected().map(Number),
                 population: populationSelect.value,
                 treatment: treatmentSelect ? treatmentSelect.value : "",
                 frequency: frequencyBox.checked,
@@ -188,11 +240,42 @@
             });
             sampleView.hidden = mode !== "sample";
             populationView.hidden = mode !== "population";
+            linearView.hidden = mode !== "linear";
+        }
+
+        function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+
+        /* What the plot left off, if anything: said under the plot and in the file. */
+        function droppedSentence(ringList) {
+            if (!ringList.dropped) { return ""; }
+            var shown = ringList.length;
+            return "Drawing the first " + shown + " time points of " + (shown + ringList.dropped) + "; "
+                + plural(ringList.dropped, "later time point") + " (" + plural(ringList.droppedSamples, "sample")
+                + ") " + (ringList.dropped === 1 ? "is" : "are") + " not shown. Use Multiple Samples (Linear) for all of them.";
         }
 
         function summarize(ringList, s) {
             var mixed = ringList.some(function (ring) { return ring.mixed; });
             frequencyBox.disabled = !mixed;
+            if (s.mode === "linear") {
+                if (!ringList.length) { return "No samples chosen."; }
+                var populations = {}, treatments = {}, times = {}, untimedTracks = 0;
+                ringList.forEach(function (track) {
+                    populations[track.population] = true;
+                    if (track.treatment) { treatments[track.treatment] = true; }
+                    if (track.time === null) { untimedTracks += 1; } else { times[String(track.time)] = true; }
+                });
+                var nPop = Object.keys(populations).length, nTreat = Object.keys(treatments).length,
+                    nTimes = Object.keys(times).length;
+                var parts = [];
+                if (nPop > 1) { parts.push(plural(nPop, "population")); }
+                if (nTreat > 1) { parts.push(plural(nTreat, "treatment")); }
+                if (nTimes > 1) { parts.push(plural(nTimes, "time point") + ", lightest earliest"); }
+                var linearWords = plural(ringList.length, "sample") + " as " + plural(ringList.length, "track")
+                    + (parts.length ? ": " + parts.join(", ") : "");
+                if (untimedTracks) { linearWords += "; " + plural(untimedTracks, "sample") + " with no time point drawn last"; }
+                return linearWords + ".";
+            }
             if (s.mode === "population") {
                 var timed = ringList.filter(function (ring) { return ring.time !== null; });
                 var untimed = ringList.filter(function (ring) { return ring.time === null; });
@@ -209,8 +292,10 @@
                 if (untimed.length) {
                     words += "; " + untimed[0].sampleIds.length + " with no time point in the outer ring";
                 }
-                if (ringList.length > 12) { words += ". Many rings are thin: one sample at a time may read better"; }
-                return words + ".";
+                words += ".";
+                if (ringList.dropped) { words += " " + droppedSentence(ringList); }
+                else if (ringList.length > 12) { words += " Many rings are thin: Multiple Samples (Linear) may read better."; }
+                return words;
             }
             if (!ringList.length) { return "No sample to draw."; }
             var n = 0;
@@ -223,7 +308,7 @@
         function redraw() {
             var s = state();
             var ringList = plot.rings(data, s);
-            var width = plot.plotWidth(box.clientWidth, ringList.length);
+            var width = s.mode === "linear" ? plot.linearWidth(box.clientWidth) : plot.plotWidth(box.clientWidth, ringList.length);
             var svg = plot.draw(data, s, width);
             box.textContent = "";
             box.appendChild(svg);
@@ -256,9 +341,12 @@
             var s = state();
             var title = s.mode === "population"
                 ? s.population + (s.treatment ? " under " + s.treatment : "") + ", one ring per time point, innermost earliest"
+                : s.mode === "linear"
+                ? plural(s.sampleIds.length, "sample") + ", one track each, ordered by treatment, population and time point"
                 : (labelOf[s.sampleId] || "");
-            plot.download(plot.standalone(current, { colors: data.colors, glyphs: data.glyphs, title: title }),
-                          fileStem + "_circos.svg", "image/svg+xml");
+            plot.download(plot.standalone(current, { colors: data.colors, glyphs: data.glyphs, title: title,
+                                                      dropped: droppedSentence(current.__rings || []) }),
+                          fileStem + (s.mode === "linear" ? "_linear.svg" : "_circos.svg"), "image/svg+xml");
         });
         var timer = null;
         window.addEventListener("resize", function () {
@@ -267,6 +355,7 @@
         });
 
         showSample();
+        showCount();
         wireTooltip(box, tip, data);
         showMode();
         redraw();

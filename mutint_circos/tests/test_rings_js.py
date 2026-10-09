@@ -35,17 +35,47 @@ process.stdin.on("end", () => {
     out.carried = Object.keys(api.carriedIds({mutations: []}, {sampleIds: [2]}, index)).sort();
     out.carriedAll = Object.keys(api.carriedIds({mutations: [{id: 10}, {id: 11}, {id: 12}]}, {sampleIds: null}, index)).sort();
     out.glyphById = index.glyphById;
+    out.maxRings = api.MAX_RINGS;
+    const capped = api.rings(job.data, {mode: "population", population: "many"});
+    out.capped = [capped.length, capped[0] && capped[0].label, capped[capped.length - 1] && capped[capped.length - 1].label, capped.dropped, capped.droppedSamples];
+    const tracks = api.tracks(job.data, {mode: "linear", sampleIds: job.linearIds});
+    out.tracks = tracks.map(t => [t.label, t.shade, t.outer, t.treatment, t.population]);
+    out.shades = tracks.shades;
+    out.groups = tracks.groups;
+    out.outerIds = api.outerIdsByGroup(job.data, tracks, api.indexCalls(job.data)).map(o => o === null ? null : Object.keys(o).sort());
+    const lin = api.linearLayout(contigs, 1000, 100);
+    out.xs = job.positions.map(p => api.xOf(lin, p[0], p[1]));
+    out.right = lin.right;
+    const geo = api.linearGeometry(1000, tracks, 80);
+    out.geometry2 = [geo.trackHeight, geo.left, geo.height, geo.headed, tracks.map((t, i) => geo.trackY(i))];
+    const tall = api.linearGeometry(1000, Object.assign(Array.from({length: 80}, (_, i) => ({group: "g"})), {groups: 1}), 500);
+    out.tall = [tall.trackHeight, tall.left, tall.headed];
+    const singletons = api.linearGeometry(1000, Object.assign(Array.from({length: 5}, (_, i) => ({group: "g" + i})), {groups: 5}), 80);
+    out.singletons = singletons.headed;
+    out.natural = [api.naturalKey("2 mM") < api.naturalKey("10 mM"), api.naturalKey("b") > api.naturalKey("a10")];
     process.stdout.write(JSON.stringify(out));
 });
 """
 
 SAMPLES = [
-    {"id": 1, "population": "A", "time_point": 500.0, "time_label": "500", "treatment": "", "is_clonal": True},
-    {"id": 2, "population": "A", "time_point": 0.0, "time_label": "0", "treatment": "", "is_clonal": False},
-    {"id": 3, "population": "A", "time_point": None, "time_label": None, "treatment": "", "is_clonal": True},
-    {"id": 4, "population": "A", "time_point": 500.0, "time_label": "500", "treatment": "x", "is_clonal": True},
-    {"id": 5, "population": "B", "time_point": 0.0, "time_label": "0", "treatment": "", "is_clonal": True},
+    {"id": 1, "population": "A", "time_point": 500.0, "time_label": "500", "treatment": "", "is_clonal": True, "label": "A-500"},
+    {"id": 2, "population": "A", "time_point": 0.0, "time_label": "0", "treatment": "", "is_clonal": False, "label": "A-0"},
+    {"id": 3, "population": "A", "time_point": None, "time_label": None, "treatment": "", "is_clonal": True, "label": "A-untimed"},
+    {"id": 4, "population": "A", "time_point": 500.0, "time_label": "500", "treatment": "x", "is_clonal": True, "label": "A-500-x"},
+    {"id": 5, "population": "B", "time_point": 0.0, "time_label": "0", "treatment": "", "is_clonal": True, "label": "B-0"},
+    # Two populations under two treatments, so the linear order and the shared shades can be
+    # told apart: "10 mM" sorts after "2 mM" by value, and time point 500 is one grey in both.
+    {"id": 6, "population": "C", "time_point": 500.0, "time_label": "500", "treatment": "10 mM", "is_clonal": True, "label": "C-500"},
+    {"id": 7, "population": "C", "time_point": 1000.0, "time_label": "1000", "treatment": "10 mM", "is_clonal": True, "label": "C-1000"},
+    {"id": 8, "population": "D", "time_point": 1000.0, "time_label": "1000", "treatment": "2 mM", "is_clonal": True, "label": "D-1000"},
+    {"id": 9, "population": "D", "time_point": 1000.0, "time_label": "1000", "treatment": "2 mM", "is_clonal": True, "label": "D-1000b"},
+] + [
+    # More time points than the circular view draws, for the cap.
+    {"id": 100 + i, "population": "many", "time_point": float(i * 10), "time_label": str(i * 10), "treatment": "",
+     "is_clonal": True, "label": "many-%d" % i}
+    for i in range(35)
 ]
+POPULATIONS = ["A", "B", "C", "D", "many"]
 
 
 def run(job):
@@ -61,8 +91,9 @@ class GeometryTestCase(unittest.TestCase):
         job = {"contigs": [{"id": "chr", "length": 4000000, "circular": True},
                            {"id": "p1", "length": 100000, "circular": True}],
                "rings": 3, "positions": [["chr", 1], ["chr", 2000000], ["chr", 4000000], ["p1", 1], ["nope", 5]],
-               "data": {"samples": SAMPLES, "calls": [], "mutations": []},
+               "data": {"samples": SAMPLES, "populations": POPULATIONS, "calls": [], "mutations": []},
                "state": {"mode": "population", "population": "A"},
+               "linearIds": [9, 8, 7, 6, 5, 4, 3, 2, 1, 999],
                "arcSpan": 4.0, "total": 4100000}
         job.update(overrides)
         return job
@@ -121,3 +152,71 @@ class GeometryTestCase(unittest.TestCase):
         width, r_first, r_last, inner = out["geometry"]
         self.assertLess(r_first, r_last)
         self.assertAlmostEqual(inner - width, r_last, places=6)
+
+    def test_the_circular_view_draws_the_first_time_points_and_counts_the_rest(self):
+        from mutint_circos.payload import MAX_RINGS
+        out = run(self.job())
+        self.assertEqual(MAX_RINGS, out["maxRings"], "the script and the page must state one cap")
+        self.assertEqual([30, "0", "290", 5, 5], out["capped"])
+
+    def test_tracks_are_ordered_by_treatment_population_and_time(self):
+        out = run(self.job())
+        self.assertEqual([
+            ["A-0", 0, False, "", "A"],            # no treatment first, A before B
+            ["A-500", 1, False, "", "A"],          # 500 is A's latest timed point, but...
+            ["A-untimed", 3, True, "", "A"],       # ...untimed counts as latest where it occurs
+            ["B-0", 0, True, "", "B"],             # alone in its group, so outer
+            ["D-1000", 2, True, "2 mM", "D"],      # 2 mM before 10 mM, by value
+            ["D-1000b", 2, True, "2 mM", "D"],     # every sample at the latest time point is outer
+            ["C-500", 1, False, "10 mM", "C"],
+            ["C-1000", 2, True, "10 mM", "C"],
+            ["A-500-x", 1, True, "x", "A"],
+        ], [t[:2] + [t[2]] + t[3:] for t in out["tracks"]])
+        self.assertEqual(4, out["shades"], "0, 500, 1000 and untimed")
+        self.assertEqual(5, out["groups"])
+        self.assertTrue(all(out["natural"]))
+
+    def test_untimed_is_the_latest_of_its_group(self):
+        # A holds 0, 500 and an untimed sample: the untimed one is outer and 500 is not.
+        out = run(self.job())
+        by_label = {t[0]: t for t in out["tracks"]}
+        self.assertFalse(by_label["A-500"][2])
+        self.assertTrue(by_label["A-untimed"][2])
+
+    def test_an_inner_track_compares_against_its_own_groups_latest(self):
+        calls = [[2, 10, 1], [1, 11, 1], [3, 12, 1], [6, 20, 1], [7, 21, 1]]
+        mutations = [{"id": i, "glyph": "circle"} for i in (10, 11, 12, 20, 21)]
+        out = run(self.job(data={"samples": SAMPLES, "populations": POPULATIONS, "calls": calls, "mutations": mutations}))
+        by_label = dict(zip([t[0] for t in out["tracks"]], out["outerIds"]))
+        self.assertEqual(["12"], by_label["A-0"], "A's outer set is its untimed sample's")
+        self.assertEqual(["12"], by_label["A-500"])
+        self.assertIsNone(by_label["A-untimed"])
+        self.assertEqual(["21"], by_label["C-500"], "C's outer set is C-1000's, not A's")
+        self.assertIsNone(by_label["C-1000"])
+        self.assertIsNone(by_label["B-0"])
+
+    def test_the_linear_axis_runs_left_to_right_with_a_gap(self):
+        out = run(self.job())
+        xs = out["xs"]
+        self.assertAlmostEqual(100, xs[0], places=6, msg="the first base sits at the label column's edge")
+        self.assertLess(xs[0], xs[1])
+        self.assertLess(xs[1], xs[2])
+        self.assertLess(xs[2], xs[3], "the plasmid follows the chromosome")
+        self.assertAlmostEqual(out["right"], xs[3] + (xs[2] - xs[0]) / 3999999 * 99999, places=3,
+                               msg="the last base of the last contig ends at the right margin")
+        self.assertIsNone(xs[4], "a contig the reference lacks has no x")
+
+    def test_tracks_shrink_with_number_and_groups_take_a_heading(self):
+        out = run(self.job())
+        height, left, total, headed, ys = out["geometry2"]
+        self.assertEqual(22, height)
+        self.assertEqual(80, left)
+        self.assertTrue(headed, "five groups are headed")
+        self.assertEqual(sorted(ys), ys)
+        self.assertGreater(ys[3] - ys[2], ys[1] - ys[0], "a new group opens after a heading and a gap")
+        self.assertGreater(total, ys[-1])
+        tall_height, tall_left, tall_headed = out["tall"]
+        self.assertEqual(8, tall_height, "eighty tracks sit at the floor")
+        self.assertEqual(180, tall_left, "the label column is capped")
+        self.assertFalse(tall_headed, "one group has no heading")
+        self.assertFalse(out["singletons"], "a heading per one-track group would name every sample twice")

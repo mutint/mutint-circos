@@ -2,11 +2,12 @@
 
 The **Circos** page, at `/circos/` in the sidebar's experiment section: the reference genome
 drawn as a circle, with the mutations of one sample -- or of one population, as one ring per
-time point -- marked around it -- each a mark
-coloured by its type, a long deletion, amplification, inversion or conversion an arc over
-its extent. One page, an Overview panel, an About section, no models, no migrations, nothing
-stored. `apps.py` registers all four from one `ready()`; `payload.py` is the derivation; the
-page's two scripts draw the plot from one JSON payload.
+time point -- marked around it, or drawn as a line with any number of samples stacked under
+it as tracks -- each mutation a mark coloured by its type, a long deletion, amplification,
+inversion or conversion an arc (or a bar) over its extent. One page, an Overview panel, an
+About section, no models, no migrations, nothing stored. `apps.py` registers all four from
+one `ready()`; `payload.py` is the derivation; the page's two scripts draw the plot from one
+JSON payload.
 
 **The design is borrowed and the code is not.** It follows
 [genome_visualisation](https://github.com/PadmanabhanKann/genome_visualisation), six scripts
@@ -97,16 +98,27 @@ runs under node (skipped, saying why, where node is not installed). `draw`, `sta
   XML declaration naming UTF-8 and Arial first -- copied from recurrent_plot.js, for the
   reason stated there.
 
-`circos.js` owns the two tabs, the preferences (`circos.mode`, `circos.frequency`,
+`circos.js` owns the three tabs, the preferences (`circos.mode`, `circos.frequency`,
 `circos.labels`, and per experiment `circos.sample.<id>`, `circos.population.<id>`,
-`circos.treatment.<id>`), the summary line and the tooltip -- one box the plot shares,
-filled from `node.__circos` on the mark under the pointer. **The Sample tab draws one
-sample**, chosen from the Mutations page's own menu shape -- a dropdown whose button carries
-the chosen name -- rather than a multi-select: a set of samples on one ring was built first
-and taken out, since overlaid samples cannot be told apart at a mark. `rings()` still
-accepts a `samples` mode with a list and a `stack` flag, which the node test covers and
-nothing on the page uses. The tab strip is the page's own, not `control_tabs.html`, whose
-tabs are the mutation tables'.
+`circos.treatment.<id>` and `circos.linear.hidden.<id>`), the summary line and the tooltip
+-- one box the plot shares, filled from `node.__circos` on the mark under the pointer. The
+tabs are **One Sample (Circular)**, **Multiple Samples (Circular)** and **Multiple Samples
+(Linear)**; their mode keys stay `sample`, `population` and `linear`, since the key is what
+the preference stores. **The one-sample tab draws one sample**, chosen from the Mutations
+page's own menu shape -- a dropdown whose button carries the chosen name -- rather than a
+multi-select: a set of samples on one ring was built first and taken out, since overlaid
+samples cannot be told apart at a mark. `rings()` still accepts a `samples` mode with a list
+and a `stack` flag, which the node test covers and nothing on the page uses. The tab strip
+is the page's own, not `control_tabs.html`, whose tabs are the mutation tables'.
+
+**The circular multi-sample view draws at most `MAX_RINGS` (30) time points**, the earliest
+first, and says what it left off: `rings()` carries `dropped` and `droppedSamples` on the
+list, the summary line names the count and points at the linear tab, and the exported SVG
+carries the same sentence. The number is stated twice -- `payload.MAX_RINGS` for the page's
+muted text and `MAX_RINGS` in `circos_plot.js`, which draws -- and the node test asserts
+they are equal. Before the cap, rings reached the 5 px floor at about 50 and walked through
+the centre past that, with nothing said; 30 is about 10 px a ring at the 1100 px width,
+where a dash and its glyph still separate.
 
 ## Rings by time, and what it cost
 
@@ -116,7 +128,7 @@ it does not do, and why, is the part worth keeping:
 
 - **Rings are not binned.** Every distinct `Sample.time_point` is a ring. Merging close time
   points would misstate the data; past about 12 the rings are thin and the summary says the
-  Samples mode may read better.
+  linear tab may read better, and past 30 the later ones are left off and counted.
 - **Samples at one time point share a ring**, overplotted. A per-sample jitter was considered
   and left out because on a genome axis a jitter reads as a position. The tooltip names
   which samples carry the mark. This is also why the Sample tab draws one sample: several
@@ -129,6 +141,52 @@ it does not do, and why, is the part worth keeping:
 - **Untimed samples** are an outermost ring rather than an error, and the summary line counts
   them. A treatment filter can empty a time point, which shortens the ring list; the summary
   says how many rings remain.
+
+## The linear layout
+
+**Multiple Samples (Linear)** is the same marks on a horizontal axis: the contigs end to end
+from the label column to the right margin with 8 px between them (`linearLayout`, `xOf`), a
+band with ticks and labels above it, and under it one track per chosen sample. It exists
+because the circle has a ceiling and the question "show me these forty clones" does not. In
+`circos_plot.js` it is `tracks`, `outerIdsByGroup`, `linearGeometry`, `linearMarksFor` and
+`drawLinear`; `draw` dispatches on `state.mode === "linear"`, and the SVG says
+`data-layout="linear"` so `standalone` writes the right sentence. Marks carry the same
+`{type, ids, calls, n}` as a ring's, so the tooltip did not change.
+
+- **Order is treatment, population, time point, then the payload's own order.** Treatment
+  compares under `naturalKey` -- digits padded, the rule `ordering.sample_order` uses -- so
+  `2 mM` precedes `10 mM`; an empty treatment sorts first; population takes the payload's
+  order, which is core's natural order; untimed samples go last within a block, as the
+  untimed ring is outermost. The server sorts nothing for it.
+- **Shade is a rank on one scale.** Every distinct time point drawn, across every population,
+  is ranked ascending, untimed last, and a track takes `ringGrey(rank, ranks)`. So time
+  point 500 is one grey in every block, which is what makes two populations' blocks
+  comparable by eye -- and what the per-ring ramp, indexed by ring position, could not say.
+- **The glyph rule is applied per population block.** A block is one treatment and one
+  population. Its outer tracks are every sample at its latest time point (untimed counts as
+  latest where it occurs, as in `rings`); they wear every glyph, and an earlier track's mark
+  is glyphed only when no outer sample of *its own* block carries it. `outerIdsByGroup`
+  hands `drawTrack` null for an outer track and the block's union otherwise.
+- **Blocks are headed only when some block holds more than one track.** Thirty clones from
+  thirty populations are thirty labels already; a heading over each said every name twice
+  and doubled the height. One block has no heading either.
+- **Height follows the tracks.** 22 px a track to 24 tracks, then shrinking to a floor of 8;
+  the label column is measured from the labels and clamped 60 to 180 px, a label that does
+  not fit trimmed with an ellipsis and carried whole in a `<title>`. The width is the box's,
+  480 to 1400 px. A hundred tracks is a tall SVG, which is the right answer.
+- **The picker is Compare's Samples menu**: `li.active` is drawn, `mutintSelectList` in
+  toggle mode, Show all / Hide all set the whole selection, and the Population and Treatment
+  menus **set the selection to a subset** -- every sample matching both -- rather than
+  layering over it, so what the menu shows is always what is drawn. The hidden set is what
+  is remembered (`circos.linear.hidden.<id>`), as the matrix remembers samples, so a sample
+  added later is drawn by default. The two menus themselves are not remembered.
+- **Spans are bars**, a thick horizontal line over the extent, at least 1.5 px, two pieces
+  for one crossing the origin of a circular contig; points bucket by type and x at 1.5 px.
+
+What it deliberately does not do: no connector between a mutation's marks on successive
+tracks (read by eye at one x, as on the rings); no collapsing of samples at one time point
+onto one track (a track is a sample; that is the point of the layout); no column for the
+time point beside the label (it is in the shade and the label's `<title>`).
 
 ## Tests
 

@@ -8,8 +8,9 @@ class CircosConfig(AppConfig):
     A page in the experiment section (**Circos**, at `/circos/`), a panel of the same name on
     the experiment's Overview, and an About section. Nothing is stored: the page is handed
     every sample and every present call of the experiment as JSON, and decides in the
-    browser which of them to draw and on how many rings -- one ring for a set of samples,
-    or one ring per time point of a population, innermost earliest.
+    browser which of them to draw and how: one sample on one ring, one population as one
+    ring per time point, innermost earliest, or any number of samples as stacked tracks
+    along a linear axis, ordered by treatment, population and time point.
 
     The design -- one ring, each mutation a mark coloured by its type, a deletion or
     amplification long enough to see drawn over its extent -- is that of

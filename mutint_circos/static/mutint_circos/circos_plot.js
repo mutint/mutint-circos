@@ -17,11 +17,21 @@
  * `rings(data, state)` decides what the rings are: one for a chosen set of samples, one per
  * chosen sample, or one per time point of a population with the earliest innermost -- that
  * last being how a population's mutations are followed through time. Rings share the space
- * between the centre hole and the band, so more rings are thinner rings, down to a floor.
+ * between the centre hole and the band, so more rings are thinner rings, down to a floor,
+ * and past `MAX_RINGS` time points the later ones are left off and counted.
+ *
+ * The same marks can be drawn **linear**: `state.mode === "linear"` lays the contigs end to
+ * end along a horizontal axis and stacks one track per chosen sample under it, ordered by
+ * treatment, population and time point (`tracks`). A track is shaded by its time point's
+ * rank among every time point drawn, so one time point is one grey in every population's
+ * block; within a population's block the tracks at its latest time point play the outermost
+ * ring's part for the glyph rule. Any number of samples fits, which is what the circle
+ * cannot offer.
  *
  * The geometry (`layout`, `angle`, `geometry`, `arcPath`, `tickStep`, `rings`, `ringGrey`,
- * `glyphed`, `glyphTransform`) is free of the DOM so it can be run under node; `draw`,
- * `standalone` and `download` need a document.
+ * `glyphed`, `glyphTransform`, `tracks`, `outerIdsByGroup`, `linearLayout`, `xOf`,
+ * `linearGeometry`, `linearMarksFor`) is free of the DOM so it can be run under node;
+ * `draw`, `standalone` and `download` need a document.
  *
  * The design -- one ring per clone, a dash per mutation coloured by type, long deletions as
  * arcs -- follows the LTEE figure (Barrick et al. 2009, Fig. 1) and
@@ -45,8 +55,19 @@
     var GREY_FIRST = 0xd9, GREY_LAST = 0x55;   // the ring ramp, innermost to outermost
     var XLINK = "http://www.w3.org/1999/xlink";
     var MIN_RING = 5, MAX_RING = 30;
+    var MAX_RINGS = 30;         // time points drawn as rings; later ones are left off
     var HOLE = 0.28;            // the centre hole, as a fraction of R
     var MIN_WIDTH = 480, MAX_WIDTH = 900, WIDE_WIDTH = 1100, WIDE_AFTER = 12;
+    /* The linear layout: contigs along one axis, one track per sample under it. */
+    var LINEAR_MIN_WIDTH = 480, LINEAR_MAX_WIDTH = 1400;
+    var LINEAR_GAP_PX = 8;      // between contigs
+    var LINEAR_RIGHT = 16;      // past the last contig
+    var LINEAR_TOP = 48;        // tick labels, contig names and the band
+    var LINEAR_BOTTOM = 10;
+    var TRACK_MIN = 8, TRACK_MAX = 22;   // a track's height
+    var GROUP_GAP = 10;         // between populations, under their heading
+    var GROUP_HEADING = 14;     // the heading's own line
+    var LABEL_MIN = 60, LABEL_MAX = 180; // the sample-label column
     var TICK_STEPS = [1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6, 2e6, 5e6, 1e7];
     var MAX_TICKS = 24;
     var FONT = 11;
@@ -211,13 +232,18 @@
        ring), "samples" (`state.sampleIds`, every chosen sample on one ring, or one ring each
        with `state.stack`), "population" (`state.population`,
        narrowed by `state.treatment`, one ring per time point ascending, the untimed last),
-       or "all" (one ring of every sample, the panel's). Each ring is
-       {key, label, sampleIds, mixed}; `sampleIds` null means every mutation in the data. */
+       "linear" (`tracks`, one per sample), or "all" (one ring of every sample, the panel's).
+       Each ring is {key, label, sampleIds, mixed}; `sampleIds` null means every mutation in
+       the data. In population mode only the first MAX_RINGS time points are rings; the list
+       carries `dropped` (time points left off) and `droppedSamples` (their samples). */
     function rings(data, state) {
         var byId = {};
         data.samples.forEach(function (s) { byId[String(s.id)] = s; });
         function mixed(ids) {
             return ids.some(function (id) { var s = byId[String(id)]; return s && s.is_clonal === false; });
+        }
+        if (state.mode === "linear") {
+            return tracks(data, state);
         }
         if (state.mode === "all") {
             return [{ key: "all", label: null, sampleIds: null, mixed: false }];
@@ -246,7 +272,13 @@
             if (untimed.length) {
                 out.push({ key: "untimed", label: UNTIMED, time: null, sampleIds: untimed, mixed: mixed(untimed) });
             }
-            return out;
+            // The earliest MAX_RINGS are drawn; what is left off is counted, never silent.
+            var kept = out.slice(0, MAX_RINGS);
+            var dropped = 0, droppedSamples = 0;
+            out.slice(MAX_RINGS).forEach(function (ring) { dropped += 1; droppedSamples += ring.sampleIds.length; });
+            kept.dropped = dropped;
+            kept.droppedSamples = droppedSamples;
+            return kept;
         }
         var ids = (state.sampleIds || []).map(Number).filter(function (id) { return byId[String(id)]; });
         if (state.stack) {
@@ -319,6 +351,190 @@
         });
         if (!any) { return 1; }
         return Math.max(OPACITY_FLOOR, Math.min(1, best));
+    }
+
+    /* ---- the linear layout, DOM-free ---- */
+
+    /* A sort key under which digits compare by value: each run of digits is padded to 20
+       places, the rule mutint-core's `ordering.sample_order` applies to a population or a
+       sample name, so "2 mM" sorts before "10 mM". */
+    function naturalKey(text) {
+        return String(text === null || text === undefined ? "" : text).replace(/\d+/g, function (digits) {
+            return ("00000000000000000000" + digits).slice(-20);
+        });
+    }
+
+    /* The tracks of the linear layout: one per sample in `state.sampleIds`, ordered by
+       treatment (an empty one first), then population in the payload's order, then time
+       point with the untimed last, then the payload's own order. Each is a ring in the sense
+       `rings` means -- {key, label, sampleIds, mixed} -- and carries besides it `time`,
+       `time_label`, `treatment`, `population`, `group` (treatment and population together),
+       `shade` (the time point's rank among every time point drawn, untimed last, so one time
+       point is one grey in every block) and `outer` (true at the group's latest time point,
+       where the glyph rule treats the track as the outermost ring). The list carries
+       `shades`, how many ranks there are, and `groups`, how many groups. */
+    function tracks(data, state) {
+        var wanted = {};
+        (state.sampleIds || []).forEach(function (id) { wanted[String(id)] = true; });
+        var populationIndex = {};
+        (data.populations || []).forEach(function (name, i) { populationIndex[name] = i; });
+        var chosen = [];
+        data.samples.forEach(function (s, i) {
+            if (!wanted[String(s.id)]) { return; }
+            var untimed = s.time_point === null || s.time_point === undefined;
+            chosen.push({ sample: s, index: i, untimed: untimed,
+                          key: [naturalKey(s.treatment || ""),
+                                populationIndex[s.population] === undefined ? Infinity : populationIndex[s.population],
+                                untimed ? Infinity : s.time_point, i] });
+        });
+        chosen.sort(function (a, b) {
+            for (var i = 0; i < 4; i++) {
+                if (a.key[i] < b.key[i]) { return -1; }
+                if (a.key[i] > b.key[i]) { return 1; }
+            }
+            return 0;
+        });
+        var timesSeen = {}, times = [], anyUntimed = false;
+        chosen.forEach(function (c) {
+            if (c.untimed) { anyUntimed = true; return; }
+            var key = String(c.sample.time_point);
+            if (!(key in timesSeen)) { timesSeen[key] = true; times.push(c.sample.time_point); }
+        });
+        times.sort(function (a, b) { return a - b; });
+        var rank = {};
+        times.forEach(function (t, i) { rank[String(t)] = i; });
+        var shades = times.length + (anyUntimed ? 1 : 0);
+        // The latest time point of each group; untimed counts as latest where it occurs.
+        var latest = {}, groups = [];
+        chosen.forEach(function (c) {
+            var group = (c.sample.treatment || "") + "\u0000" + c.sample.population;
+            if (!(group in latest)) { latest[group] = { time: -Infinity, untimed: false }; groups.push(group); }
+            if (c.untimed) { latest[group].untimed = true; }
+            else if (c.sample.time_point > latest[group].time) { latest[group].time = c.sample.time_point; }
+        });
+        var out = chosen.map(function (c) {
+            var s = c.sample;
+            var group = (s.treatment || "") + "\u0000" + s.population;
+            var last = latest[group];
+            return { key: "s" + s.id, label: s.label, sampleIds: [s.id], mixed: s.is_clonal === false,
+                     time: c.untimed ? null : s.time_point, time_label: c.untimed ? UNTIMED : s.time_label,
+                     treatment: s.treatment || "", population: s.population, group: group,
+                     shade: c.untimed ? shades - 1 : rank[String(s.time_point)],
+                     outer: last.untimed ? c.untimed : s.time_point === last.time };
+        });
+        out.shades = shades;
+        out.groups = groups.length;
+        return out;
+    }
+
+    /* What each track's glyph rule compares against: null for an outer track (every mark
+       wears its glyph), else the union of the mutation ids carried by its group's outer
+       tracks. Returned as one entry per track, in order. */
+    function outerIdsByGroup(data, trackList, index) {
+        var union = {};
+        trackList.forEach(function (track) {
+            if (!track.outer) { return; }
+            var ids = carriedIds(data, track, index);
+            union[track.group] = union[track.group] || {};
+            Object.keys(ids).forEach(function (id) { union[track.group][id] = true; });
+        });
+        return trackList.map(function (track) { return track.outer ? null : (union[track.group] || {}); });
+    }
+
+    /* Where each contig sits along the axis: end to end from x = left, a gap between them,
+       `k` pixels per base. */
+    function linearLayout(contigs, plotWidth, left) {
+        var n = contigs.length;
+        var total = 0;
+        contigs.forEach(function (c) { total += c.length; });
+        var available = plotWidth - left - LINEAR_RIGHT - LINEAR_GAP_PX * Math.max(0, n - 1);
+        var k = total > 0 ? Math.max(0, available) / total : 0;
+        var x = left;
+        var placed = [], byId = {};
+        contigs.forEach(function (c, i) {
+            var entry = { id: c.id, length: c.length, circular: !!c.circular, x0: x, x1: x + c.length * k, index: i };
+            placed.push(entry);
+            byId[c.id] = entry;
+            x = entry.x1 + LINEAR_GAP_PX;
+        });
+        return { k: k, total: total, contigs: placed, byId: byId, left: left, right: plotWidth - LINEAR_RIGHT };
+    }
+
+    /* The x of a 1-based position on a contig; null for a contig the reference lacks. */
+    function xOf(lay, seqId, pos) {
+        var c = lay.byId[seqId];
+        if (!c) { return null; }
+        return c.x0 + (pos - 1) * lay.k;
+    }
+
+    /* The vertical arithmetic: the band under LINEAR_TOP, then the tracks, a heading and a
+       gap before each group after the first. `trackY(i)` is the centre line of track i.
+       Groups are headed only when some group holds more than one track: thirty clones from
+       thirty populations are thirty labels already, and a heading over each would say every
+       name twice and double the height. */
+    function linearGeometry(width, trackList, labelWidth) {
+        var n = trackList.length;
+        var left = Math.max(LABEL_MIN, Math.min(LABEL_MAX, labelWidth || LABEL_MIN));
+        var groups = trackList.groups || 0;
+        var trackHeight = TRACK_MAX;
+        if (n > 24) { trackHeight = Math.max(TRACK_MIN, Math.round(TRACK_MAX - (n - 24) / 4)); }
+        var headed = groups > 1 && groups < n;
+        var ys = [], y = LINEAR_TOP, lastGroup = null;
+        trackList.forEach(function (track) {
+            if (headed && track.group !== lastGroup) {
+                y += GROUP_GAP + GROUP_HEADING;
+                lastGroup = track.group;
+            }
+            ys.push(y + trackHeight / 2);
+            y += trackHeight;
+        });
+        return {
+            width: width, left: left, top: LINEAR_TOP, trackHeight: trackHeight, headed: headed,
+            height: y + LINEAR_BOTTOM,
+            trackY: function (i) { return ys[i]; }
+        };
+    }
+
+    /* How wide a linear plot is drawn: the box's width, within limits. */
+    function linearWidth(boxWidth) {
+        return Math.max(LINEAR_MIN_WIDTH, Math.min(LINEAR_MAX_WIDTH, boxWidth || LINEAR_MAX_WIDTH));
+    }
+
+    /* The marks of one track, as `marksFor` but along x: points bucketed by type and pixel,
+       spans as [x1, x2] pieces (two for one crossing the origin of a circular contig). */
+    function linearMarksFor(data, track, lay, index) {
+        var calls = {};
+        track.sampleIds.forEach(function (id) {
+            (index.callsBySample[String(id)] || []).forEach(function (call) {
+                (calls[call[1]] = calls[call[1]] || []).push({ sample: call[0], frequency: call[2] });
+            });
+        });
+        var points = {}, pointOrder = [], spans = [], skipped = 0;
+        data.mutations.forEach(function (m) {
+            var carried = calls[m.id];
+            if (!carried) { return; }
+            var x1 = xOf(lay, m.seq_id, m.start);
+            if (x1 === null) { skipped += 1; return; }
+            if (m.span) {
+                var contig = lay.byId[m.seq_id];
+                var endPos = Math.min(m.end, contig.length);
+                var pieces = [[x1, xOf(lay, m.seq_id, endPos)]];
+                if (m.end > contig.length && contig.circular) {
+                    pieces.push([contig.x0, xOf(lay, m.seq_id, m.end - contig.length)]);
+                }
+                spans.push({ type: m.type, pieces: pieces, ids: [m.id], calls: carried, n: 1 });
+                return;
+            }
+            var key = m.type + ":" + Math.round(x1 / BUCKET_PX);
+            if (!points[key]) {
+                points[key] = { type: m.type, x: x1, ids: [], calls: [], n: 0 };
+                pointOrder.push(key);
+            }
+            points[key].ids.push(m.id);
+            points[key].n += 1;
+            carried.forEach(function (c) { points[key].calls.push(c); });
+        });
+        return { points: pointOrder.map(function (k) { return points[k]; }), spans: spans, skipped: skipped };
     }
 
     /* ---- the DOM half ---- */
@@ -478,10 +694,163 @@
         svg.appendChild(labels);
     }
 
+    /* A label that fits `maxWidth` at `size`, trimmed with an ellipsis where it does not. */
+    function fitLabel(text, size, maxWidth) {
+        if (textWidth(text, size) <= maxWidth) { return text; }
+        var cut = text;
+        while (cut.length > 1 && textWidth(cut + "…", size) > maxWidth) { cut = cut.slice(0, -1); }
+        return cut + "…";
+    }
+
+    /* The genome as an axis: a band per contig under LINEAR_TOP with ticks and labels above
+       it, the contig's name above those where there are several, or name and length at the
+       left where there is one. */
+    function drawAxis(svg, lay, g, labels) {
+        var band = el("g", { "class": "circos-genome" });
+        var step = tickStep(lay.total);
+        var yBand = g.top - BAND;
+        lay.contigs.forEach(function (c) {
+            band.appendChild(el("rect", { x: fmt(c.x0), y: yBand, width: fmt(Math.max(0.5, c.x1 - c.x0)), height: BAND,
+                                          fill: "#e6e6e6", stroke: "#999", "stroke-width": 1 }));
+            if (!labels) { return; }
+            var lastLabelEnd = -Infinity;
+            for (var pos = step; pos <= c.length; pos += step) {
+                var x = xOf(lay, c.id, pos);
+                band.appendChild(el("line", { x1: fmt(x), y1: yBand, x2: fmt(x), y2: yBand - 6,
+                                               stroke: "#333", "stroke-width": 1 }));
+                var words = fmtBp(pos);
+                var width = textWidth(words, FONT - 1);
+                if (x - width / 2 - lastLabelEnd < 6) { continue; }
+                lastLabelEnd = x + width / 2;
+                band.appendChild(el("text", { x: fmt(x), y: yBand - 9, "font-size": FONT - 1,
+                                               "text-anchor": "middle", fill: "#333" }, words));
+            }
+            for (var minor = step / 5; minor <= c.length; minor += step / 5) {
+                if (Math.abs((minor / step) - Math.round(minor / step)) < 1e-9) { continue; }
+                var xm = xOf(lay, c.id, minor);
+                band.appendChild(el("line", { x1: fmt(xm), y1: yBand, x2: fmt(xm), y2: yBand - 3,
+                                               stroke: "#666", "stroke-width": 0.5 }));
+            }
+            if (lay.contigs.length > 1) {
+                var mid = (c.x0 + c.x1) / 2;
+                if (c.x1 - c.x0 >= textWidth(c.id, FONT) + 4) {
+                    band.appendChild(el("text", { x: fmt(mid), y: yBand - 24, "font-size": FONT, "font-weight": "bold",
+                                                   "text-anchor": "middle", fill: "#222" }, c.id));
+                } else {
+                    band.lastChild.appendChild(el("title", {}, c.id + " (" + fmtBp(c.length) + ")"));
+                }
+            }
+        });
+        if (labels && lay.contigs.length === 1) {
+            band.appendChild(el("text", { x: 4, y: yBand - 24, "font-size": FONT, "font-weight": "bold", fill: "#222" },
+                                 lay.contigs[0].id + " (" + fmtBp(lay.contigs[0].length) + ")"));
+        }
+        svg.appendChild(band);
+    }
+
+    /* One track: a grey line per contig in the shade of its time point, the sample's label
+       at the left, a dash per point, a thick line per span, and the glyph above whichever
+       marks `glyphed` says against `outerIds`. */
+    function drawTrack(svg, data, track, i, lay, g, index, options) {
+        var y = g.trackY(i);
+        var d = Math.min(DASH_MAX, Math.max(4, g.trackHeight - DASH_GAP));
+        var stroke = Math.min(SPAN_MAX, Math.max(SPAN_MIN, g.trackHeight - 4));
+        var size = options.outerIds === null ? Math.min(GLYPH, g.trackHeight - 2) : Math.max(GLYPH_MIN, Math.min(GLYPH, g.trackHeight - 3));
+        var group = el("g", { "class": "circos-ring circos-track", "data-track": i });
+        lay.contigs.forEach(function (c) {
+            group.appendChild(el("line", { x1: fmt(c.x0), y1: fmt(y), x2: fmt(c.x1), y2: fmt(y),
+                                           stroke: ringGrey(track.shade, options.shades), "stroke-width": RING_LINE,
+                                           "class": "circos-ring-line" }));
+        });
+        var fontSize = Math.min(FONT - 1, Math.max(7, g.trackHeight - 3));
+        var label = el("text", { x: fmt(g.left - 6), y: fmt(y), "font-size": fontSize, "text-anchor": "end",
+                                 "dominant-baseline": "middle", fill: "#333" },
+                       fitLabel(track.label, fontSize, g.left - 10));
+        label.appendChild(el("title", {}, track.label + (track.time_label ? ", " + track.time_label : "")));
+        group.appendChild(label);
+        var marks = linearMarksFor(data, track, lay, index);
+        marks.spans.forEach(function (span) {
+            var color = data.colors[span.type] || "#333";
+            var node = el("g", { "class": "circos-mark", "data-ids": span.ids.join(","), "data-type": span.type,
+                                 "data-track": i, opacity: opacityOf(span, track, options.frequency) });
+            span.pieces.forEach(function (piece) {
+                var x1 = piece[0], x2 = piece[1];
+                if (x2 - x1 < MIN_ARC_PX) { var c = (x1 + x2) / 2; x1 = c - MIN_ARC_PX / 2; x2 = c + MIN_ARC_PX / 2; }
+                node.appendChild(el("line", { x1: fmt(x1), y1: fmt(y), x2: fmt(x2), y2: fmt(y),
+                                              stroke: color, "stroke-width": fmt(stroke) }));
+            });
+            if (glyphed(span, options.outerIds)) {
+                var first = span.pieces[0];
+                node.appendChild(glyphUse(index.glyphById[span.ids[0]] || "square", size, color,
+                                          "translate(" + fmt((first[0] + first[1]) / 2) + "," + fmt(y - stroke / 2 - 1 - size / 2) + ")"));
+            }
+            node.__circos = span;
+            group.appendChild(node);
+        });
+        marks.points.forEach(function (point) {
+            var color = data.colors[point.type] || "#333";
+            var node = el("g", { "class": "circos-mark", "data-ids": point.ids.join(","), "data-type": point.type,
+                                 "data-track": i, opacity: opacityOf(point, track, options.frequency) });
+            node.appendChild(el("line", { x1: fmt(point.x), y1: fmt(y - d / 2), x2: fmt(point.x), y2: fmt(y + d / 2),
+                                          stroke: color, "stroke-width": 1.5 }));
+            if (glyphed(point, options.outerIds)) {
+                node.appendChild(glyphUse(index.glyphById[point.ids[0]] || "square", size, color,
+                                          "translate(" + fmt(point.x) + "," + fmt(y - d / 2 - 1 - size / 2) + ")"));
+            }
+            node.__circos = point;
+            group.appendChild(node);
+        });
+        svg.appendChild(group);
+        return marks.skipped;
+    }
+
+    /* A heading over each group's block, when there is more than one group. */
+    function drawGroupHeadings(svg, trackList, g) {
+        if (!g.headed) { return; }
+        var headings = el("g", { "class": "circos-group-headings" });
+        var lastGroup = null;
+        trackList.forEach(function (track, i) {
+            if (track.group === lastGroup) { return; }
+            lastGroup = track.group;
+            var words = (track.treatment ? track.treatment + " · " : "") + track.population;
+            headings.appendChild(el("text", { x: 4, y: fmt(g.trackY(i) - g.trackHeight / 2 - 4), "font-size": FONT,
+                                               "font-weight": "bold", fill: "#222" }, words));
+        });
+        svg.appendChild(headings);
+    }
+
+    /* The linear plot: the axis across the top, one track per chosen sample under it. */
+    function drawLinear(data, state, width) {
+        var trackList = tracks(data, state);
+        var labelWidth = 0;
+        trackList.forEach(function (track) { labelWidth = Math.max(labelWidth, textWidth(track.label, FONT - 1) + 12); });
+        var g = linearGeometry(width, trackList, labelWidth);
+        var lay = linearLayout(data.contigs, width, g.left);
+        var svg = el("svg", { xmlns: NS, width: width, height: fmt(g.height), viewBox: "0 0 " + width + " " + fmt(g.height),
+                              "font-family": FONT_FAMILY, "data-circos": "1", "data-layout": "linear",
+                              "data-rings": trackList.length });
+        svg.appendChild(el("rect", { width: width, height: fmt(g.height), fill: "#fff" }));
+        var index = indexCalls(data);
+        var outer = outerIdsByGroup(data, trackList, index);
+        var skipped = 0;
+        trackList.forEach(function (track, i) {
+            skipped += drawTrack(svg, data, track, i, lay, g, index, {
+                frequency: state.frequency !== false, outerIds: outer[i], shades: trackList.shades
+            });
+        });
+        drawAxis(svg, lay, g, state.labels !== false);
+        drawGroupHeadings(svg, trackList, g);
+        svg.setAttribute("data-skipped", skipped);
+        svg.__rings = trackList;
+        return svg;
+    }
+
     /* The plot. `state` is what `rings` reads plus `labels` (ticks and names) and
        `frequency` (opacity by frequency). The SVG carries `data-rings`, `data-skipped` (the
-       mutations on contigs the reference lacks) and each mark's mutation ids. */
+       mutations on contigs the reference lacks) and each mark's mutation ids. A linear
+       `state.mode` is drawn by `drawLinear`, whose SVG says so in `data-layout`. */
     function draw(data, state, width) {
+        if (state.mode === "linear") { return drawLinear(data, state, width); }
         var ringList = rings(data, state);
         if (!ringList.length) { ringList = [{ key: "none", label: null, sampleIds: [], mixed: false }]; }
         var lay = layout(data.contigs, { rings: ringList.length });
@@ -552,8 +921,14 @@
         });
         y += LINE;
         if (Number(svg.getAttribute("data-rings")) > 1) {
-            legend.appendChild(el("text", { x: 0, y: y + SW, "font-size": FONT, fill: "#555" },
-                                  "Rings are time points, innermost earliest. A symbol inside the outermost ring marks a mutation no sample on that ring carries."));
+            var sentence = svg.getAttribute("data-layout") === "linear"
+                ? "Tracks are samples, ordered by treatment, population and time point, shaded lighter earlier. A symbol on a track before its population's latest time point marks a mutation no sample at that time point carries."
+                : "Rings are time points, innermost earliest. A symbol inside the outermost ring marks a mutation no sample on that ring carries.";
+            legend.appendChild(el("text", { x: 0, y: y + SW, "font-size": FONT, fill: "#555" }, sentence));
+            y += LINE;
+        }
+        if (options.dropped) {
+            legend.appendChild(el("text", { x: 0, y: y + SW, "font-size": FONT, fill: "#555" }, options.dropped));
             y += LINE;
         }
         if (options.title) {
@@ -585,7 +960,11 @@
                 rings: rings, marksFor: marksFor, indexCalls: indexCalls, opacityOf: opacityOf,
                 ringGrey: ringGrey, ringRadius: ringRadius, dashLength: dashLength, spanStroke: spanStroke,
                 carriedIds: carriedIds, glyphed: glyphed, glyphTransform: glyphTransform,
-                draw: draw, standalone: standalone, download: download, UNTIMED: UNTIMED };
+                naturalKey: naturalKey, tracks: tracks, outerIdsByGroup: outerIdsByGroup,
+                linearLayout: linearLayout, xOf: xOf, linearGeometry: linearGeometry,
+                linearWidth: linearWidth, linearMarksFor: linearMarksFor,
+                draw: draw, standalone: standalone, download: download,
+                UNTIMED: UNTIMED, MAX_RINGS: MAX_RINGS };
     root.mutintCircosPlot = api;
     if (typeof module !== "undefined" && module.exports) { module.exports = api; }
 }(typeof window !== "undefined" ? window : this));

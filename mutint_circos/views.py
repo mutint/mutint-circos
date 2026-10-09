@@ -15,7 +15,7 @@ from mutint_common.util import get_user_context
 from mutint_experiment import models
 from mutint_export.util import safe_filename
 from mutint_common.glyphs import GLYPHS
-from mutint_circos.payload import ARC_THRESHOLD, COLORS, circos_payload
+from mutint_circos.payload import ARC_THRESHOLD, COLORS, MAX_RINGS, circos_payload
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,9 @@ def circos(request):
         "legend": [(key, COLORS[key]) for key in COLORS],
         "glyphs": GLYPHS,
         "arc_threshold_kb": ARC_THRESHOLD // 1000,
+        # The circular view draws this many time points as rings and says what it left off;
+        # the same number is MAX_RINGS in circos_plot.js, and the page states it.
+        "max_rings": MAX_RINGS,
         "authenticated": authenticated,
         "preferences": get_preferences(user, PREFERENCE_PREFIX) if authenticated else {},
         "preferences_url": reverse("preferences"),

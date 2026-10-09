@@ -21,26 +21,32 @@
     {{ data|json_script:"circos-data" }}
     {% if authenticated %}{{ preferences|json_script:"circos-prefs" }}{% endif %}
 
-    <p>The reference genome as a circle, with the mutations of the chosen samples marked
-        around it. Each mark is coloured by its type; a deletion, amplification, inversion or
-        conversion longer than {{ arc_threshold_kb }} kb is drawn over its extent. Choose one
-        sample for one ring, or a population for one ring per time point, innermost earliest
-        and lightest. Each mutation on the outermost ring wears a symbol for its kind; on an
-        inner ring the symbol caps a mutation no sample on the outermost ring carries. The
-        designated ancestor's mutations are left out.</p>
+    <p>The reference genome with the mutations of the chosen samples marked on it. Each mark
+        is coloured by its type; a deletion, amplification, inversion or conversion longer
+        than {{ arc_threshold_kb }} kb is drawn over its extent. Choose one sample for one
+        ring, a population for one ring per time point, innermost earliest and lightest, or
+        any number of samples as stacked tracks, ordered by treatment, population and time
+        point and shaded the same way. Each mutation on the outermost ring, or on a
+        population's latest track, wears a symbol for its kind; inside, the symbol caps a
+        mutation no sample at that latest time point carries. The designated ancestor's
+        mutations are left out.</p>
 
     {% if not data.has_reference %}
         <p class="text-muted" data-role="no-reference">This experiment has no reference genome
             yet, so there is no circle to draw.</p>
     {% else %}
     {% include "glyphs/sprite.html" %}
-    {% comment %} Two tabs, and they are one choice: what the rings are drawn from. Sample
-       is one sample, picked from the same menu the Mutations page uses; Population is one
-       population as one ring per time point. The strip is the page's own rather than
-       control_tabs.html, whose tabs are the mutation tables' and not these. {% endcomment %}
+    {% comment %} Three tabs, and they are one choice: what is drawn, and how. One Sample
+       (Circular) is one sample on one ring, picked from the same menu the Mutations page
+       uses; Multiple Samples (Circular) is one population as one ring per time point;
+       Multiple Samples (Linear) is any set of samples as stacked tracks, picked from
+       Compare's Samples menu shape. The mode keys (sample, population, linear) are what the
+       preference stores. The strip is the page's own rather than control_tabs.html, whose
+       tabs are the mutation tables' and not these. {% endcomment %}
     <ul class="nav nav-tabs circos-tabs" data-role="mode">
-        <li class="active"><a href="#" data-mode="sample">Sample</a></li>
-        <li><a href="#" data-mode="population">Population</a></li>
+        <li class="active"><a href="#" data-mode="sample">One Sample (Circular)</a></li>
+        <li><a href="#" data-mode="population">Multiple Samples (Circular)</a></li>
+        <li><a href="#" data-mode="linear">Multiple Samples (Linear)</a></li>
     </ul>
     <div class="circos-pane" data-role="sample-view">
         <b>Sample:</b>
@@ -76,7 +82,49 @@
             </select>
         </label>
         {% endif %}
-        <span class="text-muted">one ring per time point, innermost earliest</span>
+        <span class="text-muted">one ring per time point, innermost earliest, up to {{ max_rings }}</span>
+    </div>
+    {% comment %} The linear tab's picker is Compare's Samples menu: a row `active` is drawn,
+       Show all / Hide all set the whole selection, and the population and treatment menus
+       set it to a subset. The selection is what is remembered, as the hidden set. {% endcomment %}
+    <div class="circos-pane" data-role="linear-view" hidden>
+        <div class="btn-group">
+            <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown"
+                    aria-haspopup="true" aria-expanded="false">
+                Samples (<span data-role="linear-count">{{ data.samples|length }}</span>
+                of {{ data.samples|length }}) <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu mutint-menu mutint-select-list" data-role="linear-samples">
+                {% for sample in data.samples %}
+                    <li data-value="{{ sample.id }}" class="active"><a href="#">{{ sample.label }}{% if sample.treatment %} <span class="text-muted">{{ sample.treatment }}</span>{% endif %}</a></li>
+                {% empty %}
+                    <li class="mutint-select-empty">This experiment has no samples yet.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="btn-group" role="group">
+            <button type="button" class="btn btn-default" data-samples="all">Show all samples</button>
+            <button type="button" class="btn btn-default" data-samples="none">Hide all samples</button>
+        </div>
+        <label class="view-filter-field circos-select">Population:
+            <select class="form-control" data-role="linear-population" aria-label="Population">
+                <option value="all">all</option>
+                {% for name in data.populations %}
+                    <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        {% if data.treatments %}
+        <label class="view-filter-field circos-select">Treatment:
+            <select class="form-control" data-role="linear-treatment" aria-label="Treatment">
+                <option value="">any</option>
+                {% for name in data.treatments %}
+                    <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        {% endif %}
+        <span class="text-muted">ordered by treatment, population and time point</span>
     </div>
     <div class="btn-row circos-controls">
         <label class="circos-check" title="Draw a mutation found at less than 100% in a mixed-population sample paler, in proportion to its frequency">
@@ -101,7 +149,7 @@
             {% for glyph, words in glyphs %}
                 <span class="circos-legend-entry"><svg class="circos-glyph"><use href="#glyph-{{ glyph }}"/></svg> {{ words }}</span>
             {% endfor %}
-            <span class="circos-legend-entry text-muted">symbol = on the outermost ring, every mutation; inside, one the outermost ring lacks</span>
+            <span class="circos-legend-entry text-muted">symbol = on the outermost ring or a population's latest track, every mutation; inside, one that latest set lacks</span>
         </div>
     </div>
 

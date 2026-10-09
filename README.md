@@ -12,14 +12,20 @@ outermost ring every mutation wears a symbol for its kind, the same twelve shape
 mutint-recurrent draws. Hover a mark for what it is, where, which samples carry it and at
 what frequency.
 
-Two tabs choose what is drawn:
+Three tabs choose what is drawn:
 
-- **Sample** -- one sample, from the same menu the Mutations page uses, on one ring.
-- **Population** -- one population as one ring per time point, innermost earliest and
-  lightest, so a lineage's mutations can be followed through time. A mutation on an inner
-  ring that no sample on the outermost ring carries is capped with its symbol, the figure's
-  "off the line of descent" pin. Samples with no time point go to an outermost ring of their
-  own.
+- **One Sample (Circular)** -- one sample, from the same menu the Mutations page uses, on
+  one ring.
+- **Multiple Samples (Circular)** -- one population as one ring per time point, innermost
+  earliest and lightest, so a lineage's mutations can be followed through time. A mutation
+  on an inner ring that no sample on the outermost ring carries is capped with its symbol,
+  the figure's "off the line of descent" pin. Samples with no time point go to an outermost
+  ring of their own. Up to 30 time points are drawn; later ones are counted under the plot.
+- **Multiple Samples (Linear)** -- any number of samples as horizontal tracks stacked under
+  the genome, ordered by treatment, population and time point, each track shaded by its time
+  point so one time point is one grey in every population. Within a population's block the
+  latest time point plays the outermost ring's part for the symbols. Samples are picked
+  from a menu with Show all / Hide all, and a population or treatment menu selects a subset.
 
 The designated ancestor's mutations are subtracted before anything is drawn. The same plot,
 of every sample at once, is a panel on the experiment's Overview, and the page downloads the

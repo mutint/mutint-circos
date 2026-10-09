@@ -24,6 +24,10 @@ from mutint_sample.util import calls_for_samples, get_ordered_sample_dict
 #: a pixel of arc, and the upstream design drew the same boundary.
 ARC_THRESHOLD = 5000
 
+#: How many time points the circular view draws as rings before leaving later ones off,
+#: counted and said under the plot. Must equal MAX_RINGS in circos_plot.js, which draws them.
+MAX_RINGS = 30
+
 #: The types whose length means an extent on the reference.
 SPAN_TYPES = frozenset(("DEL", "AMP", "INV", "CON"))
 
