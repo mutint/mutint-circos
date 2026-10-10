@@ -177,8 +177,9 @@ because the circle has a ceiling and the question "show me these forty clones" d
   from the widest label and never narrower than 60 px -- a label is never trimmed, so a long
   name costs axis width rather than legibility. The width is the box's, 800 to 1400 px, and
   **a box narrower than 800 px scrolls the plot** (`.circos-plot` is `overflow-x: auto` and
-  the linear SVG opts out of `max-width: 100%`) rather than shrinking it; the tooltip adds
-  the box's `scrollLeft` for it. A hundred tracks is a tall SVG, which is the right answer.
+  the linear SVG opts out of `max-width: 100%`) rather than shrinking it. The tooltip is a
+  sibling of the box, positioned in the page's (or the panel's) root, so the box scrolls
+  without carrying it; `place` measures the pointer from the tip's own `offsetParent`. A hundred tracks is a tall SVG, which is the right answer.
 - **The picker is Compare's Samples menu**: `li.active` is drawn, `mutintSelectList` in
   toggle mode, Show all / Hide all set the whole selection, and the Population and Treatment
   menus **set the selection to a subset** -- every sample matching both -- rather than

@@ -37,5 +37,7 @@
 .circos-tip-head { font-weight: bold; }
 .circos-tip-mutation + .circos-tip-mutation { margin-top: 6px; border-top: 1px solid #eee; padding-top: 4px; }
 .circos-note:empty { display: none; }
-.circos-panel .circos-plot { position: relative; }
+/* The tooltip is positioned in the page's or the panel's root, beside the plot box rather
+   than inside it, so a scrolling linear box does not carry it or grow a scrollbar for it. */
+.mutint-circos, .circos-panel { position: relative; }
 .circos-filter-summary { margin-top: 10px; }

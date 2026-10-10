@@ -93,12 +93,15 @@
         data.samples.forEach(function (s) { index.samples[String(s.id)] = s; });
         var current = null;
         function place(event) {
-            // The box scrolls a linear plot wider than itself, so the pointer's x is offset
-            // by what is scrolled out of view.
+            // The tip is absolutely positioned in its parent (the page's or the panel's root,
+            // which the stylesheet positions), beside the box rather than inside it, so a
+            // linear plot's box can scroll without carrying the tip. Measured from that
+            // parent, and kept within the box's visible width.
+            var origin = (tip.offsetParent || tip.parentNode).getBoundingClientRect();
             var rect = box.getBoundingClientRect();
-            var scrolled = box.scrollLeft || 0;
-            var x = event.clientX - rect.left + scrolled + 14, y = event.clientY - rect.top + 14;
-            tip.style.left = Math.min(x, Math.max(0, scrolled + rect.width - tip.offsetWidth - 4)) + "px";
+            var x = event.clientX - origin.left + 14, y = event.clientY - origin.top + 14;
+            var maxX = rect.right - origin.left - tip.offsetWidth - 4;
+            tip.style.left = Math.max(0, Math.min(x, maxX)) + "px";
             tip.style.top = y + "px";
         }
         box.addEventListener("mouseover", function (event) {
