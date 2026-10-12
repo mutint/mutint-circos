@@ -188,6 +188,13 @@ because the circle has a ceiling and the question "show me these forty clones" d
   added later is drawn by default. The two menus themselves are not remembered.
 - **Spans are bars**, a thick horizontal line over the extent, at least 1.5 px, two pieces
   for one crossing the origin of a circular contig; points bucket by type and x at 1.5 px.
+- **Every contig is named, on as many rows as the names need.** `contigLabels` centres each
+  name over its band, keeps it inside the plot, and takes the lowest row where it clears
+  the name before it by 6 px; each extra row (14 px) pushes the axis and the tracks down. A
+  name not sitting on its band -- a higher row, wider than the band, or pushed in from an
+  edge -- draws a thin leader down to it, which is how an 80 kb plasmid beside a 3 Mb
+  chromosome is still named rather than left to a tooltip. The band keeps its
+  `name (length)` title either way. The circular plot still drops a name under 4° of arc.
 
 What it deliberately does not do: no connector between a mutation's marks on successive
 tracks (read by eye at one x, as on the rings); no collapsing of samples at one time point

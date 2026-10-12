@@ -72,6 +72,8 @@
     var GROUP_HEADING = 14;     // the heading's own line
     var LABEL_GAP = 8;          // between the axis's end and a track's label
     var LABEL_MIN = 60;         // the sample-label column, at the right, is never narrower
+    var LABEL_TIER = 14;        // one row of contig names; a name that does not fit goes up one
+    var LABEL_TIER_GAP = 6;     // between two names on one row
     var TICK_STEPS = [1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6, 2e6, 5e6, 1e7];
     var MAX_TICKS = 24;
     var FONT = 11;
@@ -469,6 +471,28 @@
         return { k: k, total: total, contigs: placed, byId: byId, left: left, right: right };
     }
 
+    /* Where each contig's name goes on the linear axis, when there are several. A name is
+       centred over its band, kept inside the plot's width, and takes the lowest tier where
+       it clears the name before it by LABEL_TIER_GAP -- tier 0 is the row nearest the band,
+       so a plasmid too short for its own name is named a row up rather than not at all. A
+       name not sitting on its band (a higher tier, wider than the band, or pushed in from an
+       edge) gets a `leader` down to it. `measure(text, size)` is textWidth by default. */
+    function contigLabels(lay, width, measure) {
+        measure = measure || textWidth;
+        var ends = [], labels = [];
+        lay.contigs.forEach(function (c) {
+            var w = measure(c.id, FONT) * 1.1;   // drawn bold; the measurer knows no weight
+            var mid = (c.x0 + c.x1) / 2;
+            var x = Math.max(w / 2 + 2, Math.min(width - w / 2 - 2, mid));
+            var tier = 0;
+            while (tier < ends.length && ends[tier] + LABEL_TIER_GAP > x - w / 2) { tier += 1; }
+            ends[tier] = x + w / 2;
+            labels.push({ id: c.id, x: x, mid: mid, width: w, tier: tier,
+                          leader: tier > 0 || w > c.x1 - c.x0 || Math.abs(x - mid) > 0.5 });
+        });
+        return { labels: labels, tiers: Math.max(1, ends.length) };
+    }
+
     /* The x of a 1-based position on a contig; null for a contig the reference lacks. */
     function xOf(lay, seqId, pos) {
         var c = lay.byId[seqId];
@@ -483,8 +507,9 @@
        name twice and double the height. The label column is at the right, as wide as the
        widest label asks (`labelWidth`), never narrower than LABEL_MIN and never trimmed:
        `right` is where the axis ends and the labels begin. */
-    function linearGeometry(width, trackList, labelWidth) {
+    function linearGeometry(width, trackList, labelWidth, labelTiers) {
         var n = trackList.length;
+        var top = LINEAR_TOP + Math.max(0, (labelTiers || 1) - 1) * LABEL_TIER;
         var left = LINEAR_LEFT;
         var column = Math.max(LABEL_MIN, labelWidth || 0);
         var right = width - LINEAR_RIGHT - column;
@@ -492,7 +517,7 @@
         var trackHeight = TRACK_MAX;
         if (n > 24) { trackHeight = Math.max(TRACK_MIN, Math.round(TRACK_MAX - (n - 24) / 3)); }
         var headed = groups > 1 && groups < n;
-        var ys = [], y = LINEAR_TOP, lastGroup = null;
+        var ys = [], y = top, lastGroup = null;
         trackList.forEach(function (track) {
             if (headed && track.group !== lastGroup) {
                 y += GROUP_GAP + GROUP_HEADING;
@@ -502,7 +527,7 @@
             y += trackHeight;
         });
         return {
-            width: width, left: left, right: right, labelX: right + LABEL_GAP, top: LINEAR_TOP,
+            width: width, left: left, right: right, labelX: right + LABEL_GAP, top: top,
             trackHeight: trackHeight, headed: headed,
             height: y + LINEAR_BOTTOM,
             trackY: function (i) { return ys[i]; }
@@ -708,16 +733,19 @@
         svg.appendChild(labels);
     }
 
-    /* The genome as an axis: a band per contig under LINEAR_TOP with ticks and labels above
-       it, the contig's name above those where there are several, or name and length at the
-       left where there is one. */
-    function drawAxis(svg, lay, g, labels) {
+    /* The genome as an axis: a band per contig under the top margin with ticks and labels
+       above it, the contigs' names above those where there are several (`names`, from
+       contigLabels, on as many tiers as they need), or name and length at the left where
+       there is one. */
+    function drawAxis(svg, lay, g, labels, names) {
         var band = el("g", { "class": "circos-genome" });
         var step = tickStep(lay.total);
         var yBand = g.top - BAND;
         lay.contigs.forEach(function (c) {
-            band.appendChild(el("rect", { x: fmt(c.x0), y: yBand, width: fmt(Math.max(0.5, c.x1 - c.x0)), height: BAND,
-                                          fill: "#e6e6e6", stroke: "#999", "stroke-width": 1 }));
+            var rect = el("rect", { x: fmt(c.x0), y: yBand, width: fmt(Math.max(0.5, c.x1 - c.x0)), height: BAND,
+                                    fill: "#e6e6e6", stroke: "#999", "stroke-width": 1 });
+            rect.appendChild(el("title", {}, c.id + " (" + fmtBp(c.length) + ")"));
+            band.appendChild(rect);
             if (!labels) { return; }
             var lastLabelEnd = -Infinity;
             for (var pos = step; pos <= c.length; pos += step) {
@@ -737,16 +765,18 @@
                 band.appendChild(el("line", { x1: fmt(xm), y1: yBand, x2: fmt(xm), y2: yBand - 3,
                                                stroke: "#666", "stroke-width": 0.5 }));
             }
-            if (lay.contigs.length > 1) {
-                var mid = (c.x0 + c.x1) / 2;
-                if (c.x1 - c.x0 >= textWidth(c.id, FONT) + 4) {
-                    band.appendChild(el("text", { x: fmt(mid), y: yBand - 24, "font-size": FONT, "font-weight": "bold",
-                                                   "text-anchor": "middle", fill: "#222" }, c.id));
-                } else {
-                    band.lastChild.appendChild(el("title", {}, c.id + " (" + fmtBp(c.length) + ")"));
-                }
-            }
         });
+        if (names) {
+            names.labels.forEach(function (name) {
+                var y = yBand - 24 - name.tier * LABEL_TIER;
+                if (name.leader) {
+                    band.appendChild(el("line", { x1: fmt(name.x), y1: fmt(y + 3), x2: fmt(name.mid), y2: yBand,
+                                                   stroke: "#999", "stroke-width": 0.75, "class": "circos-contig-leader" }));
+                }
+                band.appendChild(el("text", { x: fmt(name.x), y: fmt(y), "font-size": FONT, "font-weight": "bold",
+                                               "text-anchor": "middle", fill: "#222" }, name.id));
+            });
+        }
         if (labels && lay.contigs.length === 1) {
             band.appendChild(el("text", { x: 4, y: yBand - 24, "font-size": FONT, "font-weight": "bold", fill: "#222" },
                                  lay.contigs[0].id + " (" + fmtBp(lay.contigs[0].length) + ")"));
@@ -832,6 +862,9 @@
         trackList.forEach(function (track) { labelWidth = Math.max(labelWidth, textWidth(track.label, FONT - 1) * 1.05 + LABEL_GAP + 6); });
         var g = linearGeometry(width, trackList, labelWidth);
         var lay = linearLayout(data.contigs, width, g.left, g.right);
+        var names = state.labels !== false && lay.contigs.length > 1 ? contigLabels(lay, width) : null;
+        // The tiers the names need push the axis down; left and right do not move, so the layout stands.
+        if (names && names.tiers > 1) { g = linearGeometry(width, trackList, labelWidth, names.tiers); }
         var svg = el("svg", { xmlns: NS, width: width, height: fmt(g.height), viewBox: "0 0 " + width + " " + fmt(g.height),
                               "font-family": FONT_FAMILY, "data-circos": "1", "data-layout": "linear",
                               "data-rings": trackList.length });
@@ -844,7 +877,7 @@
                 frequency: state.frequency !== false, outerIds: outer[i], shades: trackList.shades
             });
         });
-        drawAxis(svg, lay, g, state.labels !== false);
+        drawAxis(svg, lay, g, state.labels !== false, names);
         drawGroupHeadings(svg, trackList, g);
         svg.setAttribute("data-skipped", skipped);
         svg.__rings = trackList;
@@ -967,7 +1000,7 @@
                 ringGrey: ringGrey, ringRadius: ringRadius, dashLength: dashLength, spanStroke: spanStroke,
                 carriedIds: carriedIds, glyphed: glyphed, glyphTransform: glyphTransform,
                 naturalKey: naturalKey, tracks: tracks, outerIdsByGroup: outerIdsByGroup,
-                linearLayout: linearLayout, xOf: xOf, linearGeometry: linearGeometry,
+                linearLayout: linearLayout, xOf: xOf, contigLabels: contigLabels, linearGeometry: linearGeometry,
                 linearWidth: linearWidth, linearMarksFor: linearMarksFor,
                 draw: draw, standalone: standalone, download: download,
                 UNTIMED: UNTIMED, MAX_RINGS: MAX_RINGS };

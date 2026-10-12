@@ -52,6 +52,11 @@ process.stdin.on("end", () => {
     const tall = api.linearGeometry(1000, Object.assign(Array.from({length: 80}, (_, i) => ({group: "g"})), {groups: 1}), 500);
     out.tall = [tall.trackHeight, tall.right, tall.headed];
     out.narrowLabels = api.linearGeometry(1000, tracks, 20).right;
+    out.tieredTop = api.linearGeometry(1000, tracks, 80, 3).top;
+    const three = api.linearLayout([{id: "chr", length: 4000000}, {id: "plasmid_1", length: 100000}, {id: "plasmid_2", length: 60000}], 1000, 16, 900);
+    const names = api.contigLabels(three, 1000);
+    out.names = names.labels.map(n => [n.id, n.tier, n.leader, n.x, n.width, three.byId[n.id].x1 - three.byId[n.id].x0]);
+    out.tiers = names.tiers;
     const singletons = api.linearGeometry(1000, Object.assign(Array.from({length: 5}, (_, i) => ({group: "g" + i})), {groups: 5}), 80);
     out.singletons = singletons.headed;
     out.natural = [api.naturalKey("2 mM") < api.naturalKey("10 mM"), api.naturalKey("b") > api.naturalKey("a10")];
@@ -227,3 +232,24 @@ class GeometryTestCase(unittest.TestCase):
         self.assertEqual(1000 - 16 - 60, out["narrowLabels"], "short labels still get the minimum column")
         self.assertFalse(tall_headed, "one group has no heading")
         self.assertFalse(out["singletons"], "a heading per one-track group would name every sample twice")
+        self.assertEqual(48 + 2 * 14, out["tieredTop"], "each extra tier of contig names pushes the axis down one row")
+
+    def test_small_contigs_keep_their_names_on_higher_tiers(self):
+        out = run(self.job())
+        names = out["names"]
+        self.assertEqual(["chr", "plasmid_1", "plasmid_2"], [n[0] for n in names], "every contig is named, however short")
+        by_id = {n[0]: n for n in names}
+        self.assertEqual(0, by_id["chr"][1])
+        self.assertFalse(by_id["chr"][2], "a name sitting on its own band needs no leader")
+        self.assertTrue(any(n[1] > 0 for n in names), "two plasmid names side by side do not fit one row")
+        self.assertEqual(max(n[1] for n in names) + 1, out["tiers"])
+        for _id, tier, leader, x, width, band in names:
+            self.assertGreaterEqual(x - width / 2, 0, "a name stays inside the plot")
+            self.assertLessEqual(x + width / 2, 1000)
+            if tier > 0 or width > band:
+                self.assertTrue(leader, "%s is off its band and points at it" % _id)
+        rows = {}
+        for _id, tier, leader, x, width, band in sorted(names, key=lambda n: (n[1], n[3])):
+            if tier in rows:
+                self.assertGreaterEqual(x - width / 2, rows[tier] + 6, "names on one row do not overlap")
+            rows[tier] = x + width / 2
