@@ -60,6 +60,17 @@ process.stdin.on("end", () => {
     const singletons = api.linearGeometry(1000, Object.assign(Array.from({length: 5}, (_, i) => ({group: "g" + i})), {groups: 5}), 80);
     out.singletons = singletons.headed;
     out.natural = [api.naturalKey("2 mM") < api.naturalKey("10 mM"), api.naturalKey("b") > api.naturalKey("a10")];
+    const crowded = [{id: "chromosome", length: 4000000}].concat(Array.from({length: 4}, (_, i) => ({id: "plasmid_" + (i + 1), length: 20000})));
+    const ringLay = api.layout(crowded, {rings: 1});
+    const ringG = api.geometry(600, 1);
+    const ringNames = api.ringLabels(ringLay, ringG);
+    const box = n => { const x0 = n.anchor === "start" ? n.x : n.anchor === "end" ? n.x - n.width : n.x - n.width / 2;
+                       const y0 = n.baseline === "hanging" ? n.y : n.baseline === "alphabetic" ? n.y - 11 : n.y - 5.5;
+                       return [x0, x0 + n.width, y0, y0 + 11]; };
+    out.ringNames = ringNames.labels.map(n => [n.id, n.tier, n.leader, Math.hypot(n.x - ringG.cx, n.y - ringG.cy), box(n),
+                                                (ringLay.byId[n.id].theta1 - ringLay.byId[n.id].theta0) * ringG.R]);
+    out.ringTiers = ringNames.tiers;
+    out.ringR = [ringG.R, api.geometry(600, 1, 3).R];
     process.stdout.write(JSON.stringify(out));
 });
 """
@@ -253,3 +264,27 @@ class GeometryTestCase(unittest.TestCase):
             if tier in rows:
                 self.assertGreaterEqual(x - width / 2, rows[tier] + 6, "names on one row do not overlap")
             rows[tier] = x + width / 2
+
+    def test_the_circle_names_every_contig_on_outward_tiers(self):
+        out = run(self.job())
+        names = out["ringNames"]
+        self.assertEqual(["chromosome", "plasmid_1", "plasmid_2", "plasmid_3", "plasmid_4"], [n[0] for n in names],
+                         "every contig is named, under 4 degrees of arc or not")
+        by_id = {n[0]: n for n in names}
+        self.assertEqual(0, by_id["chromosome"][1])
+        self.assertFalse(by_id["chromosome"][2], "a name sitting on its own band needs no leader")
+        self.assertTrue(any(n[1] > 0 for n in names), "four plasmid names a few degrees apart do not fit one row")
+        self.assertEqual(max(n[1] for n in names) + 1, out["ringTiers"])
+        R = out["ringR"][0]
+        for _id, tier, leader, radius, box, arc in names:
+            self.assertAlmostEqual(R + 34 + tier * 14, radius, places=6, msg="%s is anchored on its tier" % _id)
+            if tier > 0 or box[1] - box[0] > arc:
+                self.assertTrue(leader, "%s is off its band and points at it" % _id)
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                if a[1] != b[1]:
+                    continue
+                ab, bb = a[4], b[4]
+                apart = ab[0] >= bb[1] + 6 or bb[0] >= ab[1] + 6 or ab[2] >= bb[3] + 6 or bb[2] >= ab[3] + 6
+                self.assertTrue(apart, "%s and %s share a tier without touching" % (a[0], b[0]))
+        self.assertEqual(R - 2 * 14, out["ringR"][1], "each row of names past the first comes out of the plot's radius")

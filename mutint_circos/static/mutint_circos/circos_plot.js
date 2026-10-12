@@ -74,6 +74,7 @@
     var LABEL_MIN = 60;         // the sample-label column, at the right, is never narrower
     var LABEL_TIER = 14;        // one row of contig names; a name that does not fit goes up one
     var LABEL_TIER_GAP = 6;     // between two names on one row
+    var LABEL_RADIUS = 34;      // the first row of contig names, outside the band
     var TICK_STEPS = [1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6, 2e6, 5e6, 1e7];
     var MAX_TICKS = 24;
     var FONT = 11;
@@ -129,9 +130,9 @@
 
     /* The radii: the band just inside the outer margin, the rings sharing the space between
        the hole and the band. Ring 0 is innermost. */
-    function geometry(width, nRings) {
+    function geometry(width, nRings, labelTiers) {
         var n = Math.max(1, nRings);
-        var R = width / 2 - OUTER_MARGIN;
+        var R = width / 2 - OUTER_MARGIN - Math.max(0, (labelTiers || 1) - 1) * LABEL_TIER;
         var inner = R - BAND - RING_GAP;
         var hole = HOLE * R;
         var ringWidth = Math.max(MIN_RING, Math.min(MAX_RING, (inner - hole) / n));
@@ -493,6 +494,49 @@
         return { labels: labels, tiers: Math.max(1, ends.length) };
     }
 
+    /* The box a horizontal label covers, from its anchor point and how it is anchored. */
+    function labelBox(x, y, w, h, anchor, baseline) {
+        var x0 = anchor === "start" ? x : anchor === "end" ? x - w : x - w / 2;
+        var y0 = baseline === "hanging" ? y : baseline === "alphabetic" ? y - h : y - h / 2;
+        return { x0: x0, x1: x0 + w, y0: y0, y1: y0 + h };
+    }
+
+    function boxesTouch(a, b, gap) {
+        return a.x0 < b.x1 + gap && b.x0 < a.x1 + gap && a.y0 < b.y1 + gap && b.y0 < a.y1 + gap;
+    }
+
+    /* Where each contig's name goes around the circle, when there are several: outside the
+       band at the contig's middle angle, upright, anchored away from the circle. A name takes
+       the lowest tier -- tier 0 is nearest the band, each further one LABEL_TIER out -- on
+       which it clears every name already placed there by LABEL_TIER_GAP, so a contig too
+       short for its own name is named further out rather than not at all. A name not sitting
+       on its band (a higher tier, or wider than the band's arc) gets a `leader` down to it.
+       `measure(text, size)` is textWidth by default. */
+    function ringLabels(lay, g, measure) {
+        measure = measure || textWidth;
+        var placed = [], labels = [], tiers = 1;
+        lay.contigs.forEach(function (c) {
+            var w = measure(c.id, FONT) * 1.1;   // drawn bold; the measurer knows no weight
+            var mid = (c.theta0 + c.theta1) / 2;
+            var anchor = anchorFor(mid), baseline = baselineFor(mid);
+            var tier = 0, box, p;
+            for (;;) {
+                p = polar(g.cx, g.cy, g.R + LABEL_RADIUS + tier * LABEL_TIER, mid);
+                box = labelBox(p[0], p[1], w, FONT, anchor, baseline);
+                var clear = placed.every(function (other) {
+                    return other.tier !== tier || !boxesTouch(other.box, box, LABEL_TIER_GAP);
+                });
+                if (clear) { break; }
+                tier += 1;
+            }
+            placed.push({ tier: tier, box: box });
+            tiers = Math.max(tiers, tier + 1);
+            labels.push({ id: c.id, theta: mid, x: p[0], y: p[1], anchor: anchor, baseline: baseline,
+                          width: w, tier: tier, leader: tier > 0 || w > (c.theta1 - c.theta0) * g.R });
+        });
+        return { labels: labels, tiers: tiers };
+    }
+
     /* The x of a 1-based position on a contig; null for a contig the reference lacks. */
     function xOf(lay, seqId, pos) {
         var c = lay.byId[seqId];
@@ -603,14 +647,16 @@
         return s > 0.15 ? "hanging" : s < -0.15 ? "alphabetic" : "middle";
     }
 
-    function drawGenome(svg, lay, g, labels) {
+    function drawGenome(svg, lay, g, labels, names) {
         var band = el("g", { "class": "circos-genome" });
         var step = tickStep(lay.total);
         lay.contigs.forEach(function (c) {
-            band.appendChild(el("path", {
+            var path = el("path", {
                 d: annulusPath(g.cx, g.cy, g.R - g.band, g.R, c.theta0, c.theta1),
                 fill: "#e6e6e6", stroke: "#999", "stroke-width": 1
-            }));
+            });
+            path.appendChild(el("title", {}, c.id + " (" + fmtBp(c.length) + ")"));
+            band.appendChild(path);
             if (!labels) { return; }
             var lastLabelEnd = -Infinity;
             for (var pos = step; pos <= c.length; pos += step) {
@@ -635,19 +681,20 @@
                 band.appendChild(el("line", { x1: fmt(m1[0]), y1: fmt(m1[1]), x2: fmt(m2[0]), y2: fmt(m2[1]),
                                                stroke: "#666", "stroke-width": 0.5 }));
             }
-            if (lay.contigs.length > 1) {
-                var mid = (c.theta0 + c.theta1) / 2;
-                if (c.theta1 - c.theta0 >= rad(4)) {
-                    var q = polar(g.cx, g.cy, g.R + 34, mid);
-                    band.appendChild(el("text", { x: fmt(q[0]), y: fmt(q[1]), "font-size": FONT, "font-weight": "bold",
-                                                   "text-anchor": anchorFor(mid), "dominant-baseline": baselineFor(mid),
-                                                   fill: "#222" }, c.id));
-                } else {
-                    var title = el("title", {}, c.id + " (" + fmtBp(c.length) + ")");
-                    band.lastChild.appendChild(title);
-                }
-            }
         });
+        if (names) {
+            names.labels.forEach(function (name) {
+                if (name.leader) {
+                    var from = polar(g.cx, g.cy, g.R + 6, name.theta);
+                    var to = polar(g.cx, g.cy, g.R + LABEL_RADIUS + name.tier * LABEL_TIER - 3, name.theta);
+                    band.appendChild(el("line", { x1: fmt(from[0]), y1: fmt(from[1]), x2: fmt(to[0]), y2: fmt(to[1]),
+                                                   stroke: "#999", "stroke-width": 0.75, "class": "circos-contig-leader" }));
+                }
+                band.appendChild(el("text", { x: fmt(name.x), y: fmt(name.y), "font-size": FONT, "font-weight": "bold",
+                                               "text-anchor": name.anchor, "dominant-baseline": name.baseline,
+                                               fill: "#222" }, name.id));
+            });
+        }
         if (labels && lay.contigs.length === 1) {
             band.appendChild(el("text", { x: g.cx, y: g.cy - 7, "font-size": FONT + 2, "font-weight": "bold",
                                            "text-anchor": "middle", fill: "#222" }, lay.contigs[0].id));
@@ -898,6 +945,17 @@
         if (!ringList.length) { ringList = [{ key: "none", label: null, sampleIds: [], mixed: false }]; }
         var lay = layout(data.contigs, { rings: ringList.length });
         var g = geometry(width, ringList.length);
+        // Rows of names take the margin from the plot, and a smaller plot crowds the names
+        // more, so the two are settled together; the count can only grow, and only so far.
+        var names = null;
+        if (state.labels !== false && lay.contigs.length > 1) {
+            for (var pass = 0, tiers = 1; pass < 4; pass += 1) {
+                g = geometry(width, ringList.length, tiers);
+                names = ringLabels(lay, g);
+                if (names.tiers <= tiers) { break; }
+                tiers = names.tiers;
+            }
+        }
         var svg = el("svg", { xmlns: NS, width: width, height: width, viewBox: "0 0 " + width + " " + width,
                               "font-family": FONT_FAMILY, "data-circos": "1", "data-rings": ringList.length });
         svg.appendChild(el("rect", { width: width, height: width, fill: "#fff" }));
@@ -911,7 +969,7 @@
                 outerIds: i === ringList.length - 1 ? null : outerIds
             });
         });
-        drawGenome(svg, lay, g, labels);
+        drawGenome(svg, lay, g, labels, names);
         if (labels) { drawRingLabels(svg, ringList, g); }
         svg.setAttribute("data-skipped", skipped);
         svg.__rings = ringList;
@@ -1004,7 +1062,7 @@
                 ringGrey: ringGrey, ringRadius: ringRadius, dashLength: dashLength, spanStroke: spanStroke,
                 carriedIds: carriedIds, glyphed: glyphed, glyphTransform: glyphTransform,
                 naturalKey: naturalKey, tracks: tracks, outerIdsByGroup: outerIdsByGroup,
-                linearLayout: linearLayout, xOf: xOf, contigLabels: contigLabels, linearGeometry: linearGeometry,
+                linearLayout: linearLayout, xOf: xOf, contigLabels: contigLabels, linearGeometry: linearGeometry, ringLabels: ringLabels,
                 linearWidth: linearWidth, linearMarksFor: linearMarksFor,
                 draw: draw, standalone: standalone, download: download,
                 UNTIMED: UNTIMED, MAX_RINGS: MAX_RINGS };

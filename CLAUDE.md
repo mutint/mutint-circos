@@ -194,7 +194,12 @@ because the circle has a ceiling and the question "show me these forty clones" d
   name not sitting on its band -- a higher row, wider than the band, or pushed in from an
   edge -- draws a thin leader down to it, which is how an 80 kb plasmid beside a 3 Mb
   chromosome is still named rather than left to a tooltip. The band keeps its
-  `name (length)` title either way. The circular plot still drops a name under 4° of arc.
+  `name (length)` title either way. The circle does the same with `ringLabels`: a name sits
+  upright outside the band at its contig's middle angle, 34 px out, and takes the lowest tier
+  (each 14 px further out) on which its box clears every name already placed there by 6 px.
+  Each tier past the first comes out of the plot's radius, and a smaller plot crowds the
+  names more, so `draw` settles the two together, at most four passes. A name on a higher
+  tier, or wider than its band's arc, gets a radial leader from the ticks to the name.
 
 What it deliberately does not do: no connector between a mutation's marks on successive
 tracks (read by eye at one x, as on the rings); no collapsing of samples at one time point
