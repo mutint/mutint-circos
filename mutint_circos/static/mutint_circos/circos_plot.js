@@ -672,6 +672,8 @@
         var rl = ringRadius(g, i);
         var d = dashLength(g);
         var size = i === n - 1 ? GLYPH : Math.max(GLYPH_MIN, Math.min(GLYPH, g.ringWidth - 3));
+        // One lift for every glyph, a dash's or a span's, so the symbols on a ring line up.
+        var lift = Math.max(d, spanStroke(g)) / 2 + 1 + size / 2;
         var group = el("g", { "class": "circos-ring", "data-ring": i });
         // The line spans the genome and nothing else: over the gap between contigs and at the
         // origin there is no reference to be mutated, so there is no ring.
@@ -695,7 +697,7 @@
             if (glyphed(span, options.outerIds)) {
                 var first = span.pieces[0];
                 node.appendChild(glyphUse(index.glyphById[span.ids[0]] || "square", size, color,
-                                          glyphTransform(g.cx, g.cy, rl + stroke / 2 + 1 + size / 2, (first[0] + first[1]) / 2)));
+                                          glyphTransform(g.cx, g.cy, rl + lift, (first[0] + first[1]) / 2)));
             }
             node.__circos = span;
             group.appendChild(node);
@@ -709,7 +711,7 @@
                                           stroke: color, "stroke-width": 1.5 }));
             if (glyphed(point, options.outerIds)) {
                 node.appendChild(glyphUse(index.glyphById[point.ids[0]] || "square", size, color,
-                                          glyphTransform(g.cx, g.cy, rl + d / 2 + 1 + size / 2, point.theta)));
+                                          glyphTransform(g.cx, g.cy, rl + lift, point.theta)));
             }
             node.__circos = point;
             group.appendChild(node);
@@ -792,6 +794,8 @@
         var d = Math.min(DASH_MAX, Math.max(4, g.trackHeight - DASH_GAP));
         var stroke = Math.min(SPAN_MAX, Math.max(SPAN_MIN, g.trackHeight - 4));
         var size = options.outerIds === null ? Math.min(GLYPH, g.trackHeight - 2) : Math.max(GLYPH_MIN, Math.min(GLYPH, g.trackHeight - 3));
+        // One lift for every glyph, a dash's or a span's, so the symbols on a track line up.
+        var lift = Math.max(d, stroke) / 2 + 1 + size / 2;
         var group = el("g", { "class": "circos-ring circos-track", "data-track": i });
         lay.contigs.forEach(function (c) {
             group.appendChild(el("line", { x1: fmt(c.x0), y1: fmt(y), x2: fmt(c.x1), y2: fmt(y),
@@ -817,7 +821,7 @@
             if (glyphed(span, options.outerIds)) {
                 var first = span.pieces[0];
                 node.appendChild(glyphUse(index.glyphById[span.ids[0]] || "square", size, color,
-                                          "translate(" + fmt((first[0] + first[1]) / 2) + "," + fmt(y - stroke / 2 - 1 - size / 2) + ")"));
+                                          "translate(" + fmt((first[0] + first[1]) / 2) + "," + fmt(y - lift) + ")"));
             }
             node.__circos = span;
             group.appendChild(node);
@@ -830,7 +834,7 @@
                                           stroke: color, "stroke-width": 1.5 }));
             if (glyphed(point, options.outerIds)) {
                 node.appendChild(glyphUse(index.glyphById[point.ids[0]] || "square", size, color,
-                                          "translate(" + fmt(point.x) + "," + fmt(y - d / 2 - 1 - size / 2) + ")"));
+                                          "translate(" + fmt(point.x) + "," + fmt(y - lift) + ")"));
             }
             node.__circos = point;
             group.appendChild(node);
